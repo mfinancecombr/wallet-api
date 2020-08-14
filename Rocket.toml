@@ -1,0 +1,2 @@
+[global.databases]
+finance_wallet = { url = "mongodb://localhost:27017/finance-wallet" }

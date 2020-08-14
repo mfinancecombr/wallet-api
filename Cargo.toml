@@ -1,0 +1,23 @@
+[package]
+name = "finance-wallet-api-rs"
+version = "0.1.0"
+authors = ["Gustavo Noronha Silva <gustavo.noronha@collabora.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+schemars = { version = "0.8.0-alpha-4", features = ["preserve_order", "chrono"] }
+okapi = { version = "0.5.0-alpha-1" }
+rocket_okapi = { version = "0.6.0-alpha-1" }
+rocket = { version = "0.4.3", default-features = false }
+serde = "1.0"
+
+[dependencies.rocket_contrib]
+version = "0.4.3"
+default-features = false
+features = ["json", "mongodb_pool"]
+
+[dependencies.mongodb]
+version = "0.3.12"

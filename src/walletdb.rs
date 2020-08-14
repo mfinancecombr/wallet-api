@@ -1,0 +1,135 @@
+use rocket_contrib::database;
+use rocket_contrib::databases::mongodb;
+use mongodb::db::ThreadedDatabase;
+use mongodb::{Bson, bson, doc};
+use serde::{Deserialize, Serialize};
+
+use crate::error::{BackendError};
+
+
+#[database("finance_wallet")]
+pub struct WalletDB(mongodb::db::Database);
+
+pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
+    fn collection_name() -> &'static str;
+
+    fn from_docs(cursor: mongodb::cursor::Cursor) -> Result<Vec<Self>, BackendError> {
+        cursor.map(|result| match result {
+            Ok(doc) => Self::from_doc(doc),
+            Err(e) => Err(BackendError::Database(format!("{:?}", e))),
+        }).collect::<Result<Vec<Self>, BackendError>>()
+    }
+
+    fn from_doc(doc: mongodb::ordered::OrderedDocument) -> Result<Self, BackendError> {
+        // Since I don't want to rename the id field to keep the REST API pretty,
+        // I need to do some surgery here. Note that some models, like Broker, use
+        // slugs as their IDs instead of ObjectIds, so we need to handle the two
+        // possibilities here.
+        let mut doc = doc.clone();
+        if let Some(id) = doc.remove("_id") {
+            match id.as_object_id() {
+                Some(id) => doc.insert(String::from("id"), id.to_string()),
+                None => doc.insert_bson(String::from("id"), id)
+            };
+        }
+
+        match bson::from_bson(Bson::Document(doc)) {
+            Ok(obj) => Ok(obj),
+            Err(e) => Err(BackendError::Bson(format!("{:?}", e))),
+        }
+    }
+
+    fn to_doc(&self) -> Result<mongodb::ordered::OrderedDocument, BackendError> {
+        // Reverse surgery (see above) on the id, to rename it properly. Do we need to handle
+        // models with ObjectId at all?
+        fn fix_id(doc: &mut mongodb::ordered::OrderedDocument) {
+            if let Some(id) = doc.remove("id") {
+                if id.element_type() != bson::spec::ElementType::NullValue {
+                    doc.insert_bson(String::from("_id"), id);
+                }
+            }
+        }
+
+        match bson::to_bson(self) {
+            Ok(doc) => match doc {
+                Bson::Document(mut doc) => { fix_id(&mut doc); Ok(doc) },
+                _ => Err(BackendError::Bson("Failed to create Document".to_string()))
+            },
+            Err(e) => Err(BackendError::Bson(format!("{:?}", e)))
+        }
+    }
+}
+
+pub fn get<'de, T>(wallet: &mongodb::db::Database) -> Result<Vec<T>, BackendError>
+    where T: Queryable<'de>
+{
+    let cursor = match wallet.collection(T::collection_name()).find(None, None) {
+        Ok(cursor) => cursor,
+        Err(e) => return Err(BackendError::Database(e.to_string()))
+    };
+    T::from_docs(cursor)
+}
+
+fn string_to_objectid(oid: &String) -> Result<bson::oid::ObjectId, bson::oid::Error> {
+    bson::oid::ObjectId::with_string(oid.as_str())
+}
+
+fn filter_from_oid(oid: &String) -> bson::ordered::OrderedDocument {
+    if let Ok(object_id) = string_to_objectid(oid) {
+        doc!{"_id": object_id}
+    } else {
+        doc!{"_id": oid}
+    }
+}
+
+pub fn get_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> Result<T, BackendError>
+    where T: Queryable<'de>
+{
+    match wallet.collection(T::collection_name()).find_one(Some(filter_from_oid(&oid)), None) {
+        Ok(doc) => doc.map_or(
+            Err(BackendError::NotFound),
+            |doc| T::from_doc(doc)
+        ),
+        Err(e) => Err(BackendError::Database(format!("{:?}", e)))
+    }
+}
+
+pub fn insert_one<'de, T>(wallet: &mongodb::db::Database, obj: T) -> Result<(), BackendError>
+    where T: Queryable<'de>
+{
+    let mut doc = T::to_doc(&obj)?;
+
+    // We don't want users to specify their own ids, we want mongodb to generate them,
+    // so ignore if any comes along with the request.
+    doc.remove("_id");
+
+    match wallet.collection(T::collection_name()).insert_one(doc, None) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(BackendError::Database(format!("{:?}", e)))
+    }
+}
+
+pub fn update_one<'de, T>(wallet: &mongodb::db::Database, oid: String, obj: T) -> Result<(), BackendError>
+    where T: Queryable<'de>
+{
+    let mut doc = T::to_doc(&obj)?;
+
+    // $set doesn't seem to like getting data with _id, so we remove it.
+    doc.remove("_id");
+
+    match wallet.collection(T::collection_name())
+    .update_one(filter_from_oid(&oid), doc!{"$set": doc}, None) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(BackendError::Database(format!("{:?}", e)))
+    }
+}
+
+pub fn delete_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> Result<(), BackendError>
+    where T: Queryable<'de>
+{
+    match wallet.collection(T::collection_name())
+    .delete_one(filter_from_oid(&oid), None) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(BackendError::Database(format!("{:?}", e)))
+    }
+}
