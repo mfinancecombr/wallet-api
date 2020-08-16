@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{BackendError};
 use crate::operation::{BaseOperation, AssetKind};
+use crate::position::Position;
 use crate::walletdb::*;
 
 
@@ -66,4 +67,13 @@ pub fn update_stock_operation_by_oid(db: WalletDB, oid: String, operation: Json<
 #[delete("/stocks/operations/<oid>")]
 pub fn delete_stock_operation_by_oid(db: WalletDB, oid: String) -> Result<(), BackendError> {
     delete_one::<StockOperation>(&*db, oid)
+}
+
+/// # Get a stock position
+///
+/// Get position for a specific stock
+#[openapi]
+#[get("/stocks/position/<symbol>")]
+pub fn get_stock_position_by_symbol(db: WalletDB, symbol: String) -> Result<Json<Position>, BackendError> {
+    Position::calculate_for_symbol(&*db, &symbol, None).map(|position| Json(position))
 }

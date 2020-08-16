@@ -45,5 +45,12 @@ curl \
     }'
 ```
 
+### Obtaining the current position for a stock
+
+```curlrc
+curl \
+  http://localhost:8000/stocks/position/PETR4
+```
+
 [mfinance-wallet-api-go]: https://github.com/mfinancecombr/finance-wallet-api
 [okapi]: https://github.com/GREsau/okapi
