@@ -74,6 +74,12 @@ fn string_to_objectid(oid: &String) -> Result<bson::oid::ObjectId, bson::oid::Er
     bson::oid::ObjectId::with_string(oid.as_str())
 }
 
+fn objectid_to_string(oid: Option<bson::Bson>) -> Result<String, BackendError> {
+    let oid = oid.ok_or(BackendError::Bson(String::from("Tried to use None as ObjectId when converting to String")))?;
+    oid.as_object_id().map(|oid| oid.to_string())
+        .ok_or(BackendError::Bson(format!("Could not convert {:?} to String", oid)))
+}
+
 fn filter_from_oid(oid: &String) -> bson::ordered::OrderedDocument {
     if let Ok(object_id) = string_to_objectid(oid) {
         doc!{"_id": object_id}
@@ -94,7 +100,7 @@ pub fn get_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> Result<T,
     }
 }
 
-pub fn insert_one<'de, T>(wallet: &mongodb::db::Database, obj: T) -> Result<(), BackendError>
+pub fn insert_one<'de, T>(wallet: &mongodb::db::Database, obj: T) -> Result<T, BackendError>
     where T: Queryable<'de>
 {
     let mut doc = T::to_doc(&obj)?;
@@ -104,12 +110,12 @@ pub fn insert_one<'de, T>(wallet: &mongodb::db::Database, obj: T) -> Result<(), 
     doc.remove("_id");
 
     match wallet.collection(T::collection_name()).insert_one(doc, None) {
-        Ok(_) => Ok(()),
+        Ok(result) => get_one(wallet, objectid_to_string(result.inserted_id)?),
         Err(e) => Err(BackendError::Database(format!("{:?}", e)))
     }
 }
 
-pub fn update_one<'de, T>(wallet: &mongodb::db::Database, oid: String, obj: T) -> Result<(), BackendError>
+pub fn update_one<'de, T>(wallet: &mongodb::db::Database, oid: String, obj: T) -> Result<T, BackendError>
     where T: Queryable<'de>
 {
     let mut doc = T::to_doc(&obj)?;
@@ -119,17 +125,18 @@ pub fn update_one<'de, T>(wallet: &mongodb::db::Database, oid: String, obj: T) -
 
     match wallet.collection(T::collection_name())
     .update_one(filter_from_oid(&oid), doc!{"$set": doc}, None) {
-        Ok(_) => Ok(()),
+        Ok(_) => get_one(wallet, oid),
         Err(e) => Err(BackendError::Database(format!("{:?}", e)))
     }
 }
 
-pub fn delete_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> Result<(), BackendError>
+pub fn delete_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> Result<T, BackendError>
     where T: Queryable<'de>
 {
+    let result = get_one::<T>(wallet, oid.clone()).map(|results| results)?;
     match wallet.collection(T::collection_name())
     .delete_one(filter_from_oid(&oid), None) {
-        Ok(_) => Ok(()),
+        Ok(_) => Ok(result),
         Err(e) => Err(BackendError::Database(format!("{:?}", e)))
     }
 }

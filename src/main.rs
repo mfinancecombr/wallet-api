@@ -2,12 +2,14 @@
 
 #[macro_use] extern crate rocket;
 #[macro_use] extern crate rocket_okapi;
+extern crate rocket_cors;
 use rocket_okapi::swagger_ui::*;
 
 mod broker;
 mod error;
 mod operation;
 mod position;
+mod rest;
 mod stock;
 mod walletdb;
 
@@ -17,6 +19,12 @@ use walletdb::WalletDB;
 
 
 fn main() {
+    let mut cors = rocket_cors::CorsOptions::default();
+    cors.expose_headers.insert(String::from("X-Total-Count"));
+
+    let cors = cors.to_cors()
+        .expect("Failed to create CORS configuration");
+
     rocket::ignite()
         .mount(
             "/",
@@ -43,5 +51,6 @@ fn main() {
             }),
         )
         .attach(WalletDB::fairing())
+        .attach(cors)
         .launch();
 }
