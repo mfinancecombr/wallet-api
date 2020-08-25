@@ -23,9 +23,9 @@ fn get_safely<'de, T>(doc: &bson::ordered::OrderedDocument, key: &str) -> Result
     where T: Deserialize<'de>
 {
     if let Some(value) = doc.get(key) {
-        bson::from_bson::<T>(value.clone()).map_err(|e| BackendError::Bson(format!("{:?}", e)))
+        bson::from_bson::<T>(value.clone()).map_err(|e| dang!(Bson, e))
     } else {
-        Err(BackendError::Database(
+        Err(dang!(Database,
             format!("field `{}` not found on document", key)
         ))
     }
@@ -55,7 +55,7 @@ impl Position {
         let cursor = match collection.find(Some(filter), None) {
             Ok(cursor) => cursor,
             Err(e) => {
-                return Err(BackendError::Database(format!("{:?}", e)));
+                return Err(dang!(Database, e));
             }
         };
 

@@ -10,37 +10,44 @@ use std::io::Cursor;
 
 #[derive(Clone, Debug, JsonSchema)]
 pub enum BackendError {
-  Bson(String),
-  Database(String),
-  NotFound,
-  Yahoo(String)
+    Bson(String),
+    Database(String),
+    NotFound,
+    Yahoo(String)
+}
+
+#[macro_export]
+macro_rules! dang {
+    ($kind:ident, $original_err:expr) => {
+        BackendError::$kind(format!("{:?}", $original_err))
+    }
 }
 
 impl Responder<'static> for BackendError {
     fn respond_to(self, _: &Request) -> Result<Response<'static>, Status> {
         let body;
         let status = match self {
-            BackendError::Bson(msg) => {
-            body = msg.clone();
-            Status::new(500, "Bson")
+              BackendError::Bson(msg) => {
+              body = msg.clone();
+              Status::new(500, "Bson")
           },
           BackendError::Database(msg) => {
-            body = msg.clone();
-            Status::new(500, "Database")
+              body = msg.clone();
+              Status::new(500, "Database")
           },
           BackendError::NotFound => {
-            body = String::new();
-            Status::NotFound
+              body = String::new();
+              Status::NotFound
           },
           BackendError::Yahoo(msg) => {
-            body = msg.clone();
-            Status::new(500, "Yahoo")
+              body = msg.clone();
+              Status::new(500, "Yahoo")
           }
         };
         Response::build()
-          .status(status)
-          .sized_body(Cursor::new(body))
-          .ok()
+            .status(status)
+            .sized_body(Cursor::new(body))
+            .ok()
         }
 }
 

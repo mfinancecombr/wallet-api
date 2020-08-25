@@ -16,7 +16,7 @@ pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
     fn from_docs(cursor: mongodb::cursor::Cursor) -> Result<Vec<Self>, BackendError> {
         cursor.map(|result| match result {
             Ok(doc) => Self::from_doc(doc),
-            Err(e) => Err(BackendError::Database(format!("{:?}", e))),
+            Err(e) => Err(dang!(Database, e)),
         }).collect::<Result<Vec<Self>, BackendError>>()
     }
 
@@ -35,7 +35,7 @@ pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
 
         match bson::from_bson(Bson::Document(doc)) {
             Ok(obj) => Ok(obj),
-            Err(e) => Err(BackendError::Bson(format!("{:?}", e))),
+            Err(e) => Err(dang!(Bson, e)),
         }
     }
 
@@ -53,9 +53,9 @@ pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
         match bson::to_bson(self) {
             Ok(doc) => match doc {
                 Bson::Document(mut doc) => { fix_id(&mut doc); Ok(doc) },
-                _ => Err(BackendError::Bson("Failed to create Document".to_string()))
+                _ => Err(dang!(Bson, "Failed to create Document"))
             },
-            Err(e) => Err(BackendError::Bson(format!("{:?}", e)))
+            Err(e) => Err(dang!(Bson, e))
         }
     }
 }
@@ -65,7 +65,7 @@ pub fn get<'de, T>(wallet: &mongodb::db::Database) -> Result<Vec<T>, BackendErro
 {
     let cursor = match wallet.collection(T::collection_name()).find(None, None) {
         Ok(cursor) => cursor,
-        Err(e) => return Err(BackendError::Database(e.to_string()))
+        Err(e) => return Err(dang!(Database, e))
     };
     T::from_docs(cursor)
 }
@@ -75,9 +75,9 @@ fn string_to_objectid(oid: &String) -> Result<bson::oid::ObjectId, bson::oid::Er
 }
 
 fn objectid_to_string(oid: Option<bson::Bson>) -> Result<String, BackendError> {
-    let oid = oid.ok_or(BackendError::Bson(String::from("Tried to use None as ObjectId when converting to String")))?;
+    let oid = oid.ok_or(dang!(Bson, "Tried to use None as ObjectId when converting to String"))?;
     oid.as_object_id().map(|oid| oid.to_string())
-        .ok_or(BackendError::Bson(format!("Could not convert {:?} to String", oid)))
+        .ok_or(dang!(Bson, format!("Could not convert {:?} to String", oid)))
 }
 
 fn filter_from_oid(oid: &String) -> bson::ordered::OrderedDocument {
@@ -96,7 +96,7 @@ pub fn get_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> Result<T,
             Err(BackendError::NotFound),
             |doc| T::from_doc(doc)
         ),
-        Err(e) => Err(BackendError::Database(format!("{:?}", e)))
+        Err(e) => Err(dang!(Database, e))
     }
 }
 
@@ -111,7 +111,7 @@ pub fn insert_one<'de, T>(wallet: &mongodb::db::Database, obj: T) -> Result<T, B
 
     match wallet.collection(T::collection_name()).insert_one(doc, None) {
         Ok(result) => get_one(wallet, objectid_to_string(result.inserted_id)?),
-        Err(e) => Err(BackendError::Database(format!("{:?}", e)))
+        Err(e) => Err(dang!(Database, e))
     }
 }
 
@@ -126,7 +126,7 @@ pub fn update_one<'de, T>(wallet: &mongodb::db::Database, oid: String, obj: T) -
     match wallet.collection(T::collection_name())
     .update_one(filter_from_oid(&oid), doc!{"$set": doc}, None) {
         Ok(_) => get_one(wallet, oid),
-        Err(e) => Err(BackendError::Database(format!("{:?}", e)))
+        Err(e) => Err(dang!(Database, e))
     }
 }
 
@@ -137,6 +137,6 @@ pub fn delete_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> Result
     match wallet.collection(T::collection_name())
     .delete_one(filter_from_oid(&oid), None) {
         Ok(_) => Ok(result),
-        Err(e) => Err(BackendError::Database(format!("{:?}", e)))
+        Err(e) => Err(dang!(Database, e))
     }
 }

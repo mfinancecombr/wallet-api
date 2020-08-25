@@ -6,7 +6,7 @@ extern crate rocket_cors;
 use rocket_okapi::swagger_ui::*;
 
 mod broker;
-mod error;
+#[macro_use] mod error;
 mod historical;
 mod operation;
 mod position;

@@ -74,7 +74,7 @@ fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> Result
         &format!("{}.SA", symbol),
         since,
         Some(yesterday)
-    ).map_err(|e| BackendError::Yahoo(format!("{:?}", e)))?;
+    ).map_err(|e| dang!(Yahoo, e))?;
 
     let mut docs = Vec::<bson::ordered::OrderedDocument>::new();
     for bar in data {
@@ -82,16 +82,16 @@ fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> Result
         asset_day.symbol = symbol.to_string();
 
         let doc = bson::to_bson(&asset_day)
-            .map_err(|e| BackendError::Bson(format!("{:?}", e)))?;
+            .map_err(|e| dang!(Bson, e))?;
 
         let doc = doc.as_document()
-            .ok_or(BackendError::Bson(format!("Could not convert to Document")))?;
+            .ok_or(dang!(Bson, "Could not convert to Document"))?;
 
         docs.push(doc.clone());
     }
 
     wallet.collection("historical").insert_many(docs, None)
-        .map_err(|e| BackendError::Database(format!("{:?}", e)))
+        .map_err(|e| dang!(Database, e))
         .map(|_| ())
 }
 
