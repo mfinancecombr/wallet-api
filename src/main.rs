@@ -7,6 +7,7 @@ use rocket_okapi::swagger_ui::*;
 
 mod broker;
 mod error;
+mod historical;
 mod operation;
 mod position;
 mod rest;
@@ -14,6 +15,7 @@ mod stock;
 mod walletdb;
 
 use broker::*;
+use historical::*;
 use stock::*;
 use walletdb::WalletDB;
 
@@ -41,6 +43,8 @@ fn main() {
                 update_stock_operation_by_oid,
                 delete_stock_operation_by_oid,
                 get_stock_position_by_symbol,
+
+                refresh_historical_for_symbol,
             ],
         )
         .mount(

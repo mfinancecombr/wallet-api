@@ -12,7 +12,8 @@ use std::io::Cursor;
 pub enum BackendError {
   Bson(String),
   Database(String),
-  NotFound
+  NotFound,
+  Yahoo(String)
 }
 
 impl Responder<'static> for BackendError {
@@ -30,6 +31,10 @@ impl Responder<'static> for BackendError {
           BackendError::NotFound => {
             body = String::new();
             Status::NotFound
+          },
+          BackendError::Yahoo(msg) => {
+            body = msg.clone();
+            Status::new(500, "Yahoo")
           }
         };
         Response::build()
