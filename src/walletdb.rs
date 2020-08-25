@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{BackendError};
 
 
-#[database("finance_wallet")]
+#[database("wallet")]
 pub struct WalletDB(mongodb::db::Database);
 
 pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
