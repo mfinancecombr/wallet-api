@@ -16,7 +16,15 @@ pub struct Position {
     pub average_price: f64,
     pub cost_basis: f64,
     pub quantity: i64,
-    pub date: DateTime<Local>,
+    pub time: DateTime<Local>,
+    pub sales: Vec<Sale>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct Sale {
+    pub time: DateTime<Local>,
+    pub quantity: i64,
+    pub cost_basis: f64,
 }
 
 fn get_safely<'de, T>(doc: &bson::ordered::OrderedDocument, key: &str) -> WalletResult<T>
@@ -61,6 +69,7 @@ impl Position {
 
         let mut total_cost = 0f64;
         let mut total_quantity = 0i64;
+        let mut sales = Vec::<Sale>::new();
 
         for document in cursor {
             if let Ok(document) = document {
@@ -81,6 +90,13 @@ impl Position {
                         let price = total_cost / total_quantity as f64;
                         total_cost -= price * quantity as f64;
                         total_quantity -= quantity;
+
+                        let time = get_safely::<DateTime<Utc>>(&document, "time")?;
+                        sales.push(Sale {
+                            time: DateTime::<Local>::from(time),
+                            quantity: quantity,
+                            cost_basis: price,
+                        })
                     },
                 }
             }
@@ -98,7 +114,8 @@ impl Position {
             cost_basis: total_cost,
             quantity: total_quantity,
             average_price: average,
-            date: date_to
+            time: date_to,
+            sales: sales,
         })
     }
 }
@@ -106,6 +123,7 @@ impl Position {
 #[cfg(test)]
 mod tests {
     use mongodb::ThreadedClient;
+    use std::vec::Vec;
 
     use super::*;
     use crate::operation::{AssetKind, OperationKind};
@@ -135,12 +153,20 @@ mod tests {
             }
         };
 
+        let mut sales = Vec::<Sale>::new();
+
         assert!(insert_one(&db, stock.clone()).is_ok(), true);
 
         stock.operation.price = 12.0;
         stock.operation.quantity = 50;
         stock.operation.kind = OperationKind::Sale;
         stock.operation.time = Local::now();
+
+        sales.push(Sale {
+            time: stock.operation.time.clone(),
+            quantity: 50,
+            cost_basis: 10.0,
+        });
 
         assert!(insert_one(&db, stock.clone()).is_ok(), true);
 
@@ -160,7 +186,8 @@ mod tests {
                 average_price: 7.0,
                 cost_basis: 700.0,
                 quantity: 100,
-                date: date_to.and_hms(23, 59, 59),
+                time: date_to.and_hms(23, 59, 59),
+                sales: sales,
             }
         );
     }
