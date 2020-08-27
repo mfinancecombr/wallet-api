@@ -9,6 +9,7 @@ mod broker;
 #[macro_use] mod error;
 mod historical;
 mod operation;
+mod portfolio;
 mod position;
 mod rest;
 mod stock;
@@ -16,6 +17,7 @@ mod walletdb;
 
 use broker::*;
 use historical::*;
+use portfolio::*;
 use stock::*;
 use walletdb::WalletDB;
 
@@ -45,6 +47,8 @@ fn main() {
                 get_stock_position_by_symbol,
 
                 refresh_historical_for_symbol,
+
+                portfolio_position,
             ],
         )
         .mount(

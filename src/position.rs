@@ -1,7 +1,9 @@
 use std::cmp::PartialEq;
+use std::sync::Mutex;
 use chrono::{DateTime, Date, Local, Utc};
 use mongodb::{bson, doc};
 use mongodb::db::ThreadedDatabase;
+use rayon::prelude::*;
 use rocket_okapi::{JsonSchema};
 use serde::{Serialize, Deserialize};
 
@@ -118,6 +120,29 @@ impl Position {
             sales: sales,
         })
     }
+
+    pub fn calculate_all(db: &mongodb::db::Database) -> WalletResult<Vec<Position>> {
+        let collection = db.collection("operations");
+
+        let symbols = collection.distinct("symbol", None, None)
+            .map_err(|e| dang!(Database, e))?;
+
+        let symbols = symbols.iter().map(|s|
+            s.as_str()
+                .ok_or(dang!(Bson, "Failure converting string (symbol)"))
+        ).collect::<WalletResult<Vec<&str>>>()?;
+
+        let positions = Mutex::new(Vec::<Position>::new());
+        symbols.into_par_iter()
+            .try_for_each::<_, WalletResult<_>>(|symbol| {
+                let position = Position::calculate_for_symbol(db, symbol, None)?;
+                positions.lock().unwrap().push(position);
+                Ok(())
+            }
+        )?;
+
+        Ok(positions.into_inner().unwrap())
+    }
 }
 
 #[cfg(test)]
@@ -190,5 +215,14 @@ mod tests {
                 sales: sales,
             }
         );
+    }
+
+    #[test]
+    fn test_calculate_all() {
+        let db_client = mongodb::Client::with_uri("mongodb://127.0.0.1:27017/")
+            .expect("Could not connect to mongodb");
+        let db = db_client.db("wallet-fake-test");
+
+        Position::calculate_all(&db).expect("Something went wrong");
     }
 }
