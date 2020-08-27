@@ -22,6 +22,7 @@ pub struct Position {
     pub time: DateTime<Local>,
     pub current_price: f64,
     pub gain: f64,
+    pub realized: f64,
     pub sales: Vec<Sale>,
 }
 
@@ -29,7 +30,8 @@ pub struct Position {
 pub struct Sale {
     pub time: DateTime<Local>,
     pub quantity: i64,
-    pub cost_basis: f64,
+    pub cost_price: f64,
+    pub sell_price: f64,
 }
 
 fn get_safely<'de, T>(doc: &bson::ordered::OrderedDocument, key: &str) -> WalletResult<T>
@@ -91,6 +93,7 @@ impl Position {
 
         let mut total_cost = 0f64;
         let mut total_quantity = 0i64;
+        let mut total_realized = 0f64;
         let mut sales = Vec::<Sale>::new();
 
         for document in cursor {
@@ -109,15 +112,19 @@ impl Position {
                          * take out too little if the current price is lower or too
                          * much, otherwise.
                          */
-                        let price = total_cost / total_quantity as f64;
-                        total_cost -= price * quantity as f64;
+                        let cost_price = total_cost / total_quantity as f64;
+                        total_cost -= cost_price * quantity as f64;
                         total_quantity -= quantity;
+
+                        let sell_price = get_safely::<f64>(&document, "price")?;
+                        total_realized += quantity as f64 * sell_price;
 
                         let time = get_safely::<DateTime<Utc>>(&document, "time")?;
                         sales.push(Sale {
                             time: DateTime::<Local>::from(time),
                             quantity: quantity,
-                            cost_basis: price,
+                            cost_price: cost_price,
+                            sell_price: sell_price,
                         })
                     },
                 }
@@ -143,6 +150,7 @@ impl Position {
             time: date_to,
             current_price: current_price,
             gain: current_price * total_quantity as f64 - total_cost,
+            realized: total_realized,
             sales: sales,
         })
     }
@@ -216,7 +224,8 @@ mod tests {
         sales.push(Sale {
             time: stock.operation.time.clone(),
             quantity: 50,
-            cost_basis: 10.0,
+            cost_price: 10.0,
+            sell_price: 12.0,
         });
 
         assert!(insert_one(&db, stock.clone()).is_ok(), true);
@@ -247,6 +256,7 @@ mod tests {
                 time: date_to.and_hms(23, 59, 59),
                 current_price: 0.0,
                 gain: 0.0,
+                realized: 600.0,
                 sales: sales,
             }
         );
