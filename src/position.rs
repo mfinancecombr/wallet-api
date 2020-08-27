@@ -6,6 +6,7 @@ use mongodb::db::ThreadedDatabase;
 use rayon::prelude::*;
 use rocket_okapi::{JsonSchema};
 use serde::{Serialize, Deserialize};
+use yahoo_finance::{history};
 
 use crate::error::*;
 use crate::operation::{BaseOperation, OperationKind};
@@ -19,6 +20,8 @@ pub struct Position {
     pub cost_basis: f64,
     pub quantity: i64,
     pub time: DateTime<Local>,
+    pub current_price: f64,
+    pub gain: f64,
     pub sales: Vec<Sale>,
 }
 
@@ -61,6 +64,23 @@ impl Position {
                 }
             ]
         };
+
+        // Fire a background thread to get the current price.
+        let ysymbol= format!("{}.SA", &symbol);
+        let current_price = std::thread::spawn(move || {
+            let date_from = date_to.date().and_hms(0, 0, 0);
+            let bar = history::retrieve_range(
+                &ysymbol,
+                DateTime::<Utc>::from(date_from),
+                Some(DateTime::<Utc>::from(date_to)),
+            ).ok().and_then(|mut bar| bar.pop());
+
+            if let Some(bar) = bar {
+                bar.close
+            } else {
+                f64::NAN
+            }
+        });
 
         let cursor = match collection.find(Some(filter), None) {
             Ok(cursor) => cursor,
@@ -111,12 +131,18 @@ impl Position {
             average = total_cost / total_quantity as f64;
         }
 
+        // Get the result of our background thread. We just unwrap the
+        // results as all errors are handled, so any panics should take
+        // down execution anyway.
+        let current_price = current_price.join().unwrap();
         Ok(Position {
             symbol: symbol.to_string(),
             cost_basis: total_cost,
             quantity: total_quantity,
             average_price: average,
             time: date_to,
+            current_price: current_price,
+            gain: current_price * total_quantity as f64 - total_cost,
             sales: sales,
         })
     }
@@ -204,14 +230,23 @@ mod tests {
         let date_to = Local::today();
         let position = Position::calculate_for_symbol(&db, "FAKE4", Some(date_to));
         assert_eq!(position.is_ok(), true);
+
+        // FIXME: these values change dynamically, and return NaN with the fake ticker;
+        // figure out how to test.
+        let mut position = position.unwrap();
+        position.current_price = 0.0;
+        position.gain = 0.0;
+
         assert_eq!(
-            position.unwrap(),
+            position,
             Position {
                 symbol: String::from("FAKE4"),
                 average_price: 7.0,
                 cost_basis: 700.0,
                 quantity: 100,
                 time: date_to.and_hms(23, 59, 59),
+                current_price: 0.0,
+                gain: 0.0,
                 sales: sales,
             }
         );
