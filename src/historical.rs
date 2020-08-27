@@ -6,7 +6,7 @@ use rocket_okapi::{openapi};
 use serde::{Deserialize, Serialize};
 use yahoo_finance::{history, Bar};
 
-use crate::error::{BackendError};
+use crate::error::{BackendError, WalletResult};
 use crate::walletdb::WalletDB;
 
 
@@ -37,11 +37,11 @@ impl From<Bar> for AssetDay {
 
 #[openapi]
 #[post("/assets/refresh/<symbol>")]
-pub fn refresh_historical_for_symbol(db: WalletDB, symbol: String) -> Result<(), BackendError> {
+pub fn refresh_historical_for_symbol(db: WalletDB, symbol: String) -> WalletResult<()> {
     do_refresh_for_symbol(&*db, &symbol)
 }
 
-fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> Result<(), BackendError> {
+fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> WalletResult<()> {
     let mut since = DateTime::<Utc>::from(Local.ymd(2006, 1, 1).and_hms(0, 0, 0));
 
     // First check if we need to override our since constraint, as we may

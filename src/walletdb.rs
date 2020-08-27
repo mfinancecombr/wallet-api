@@ -4,7 +4,7 @@ use mongodb::db::ThreadedDatabase;
 use mongodb::{Bson, bson, doc};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{BackendError};
+use crate::error::{BackendError, WalletResult};
 
 
 #[database("wallet")]
@@ -13,14 +13,14 @@ pub struct WalletDB(mongodb::db::Database);
 pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
     fn collection_name() -> &'static str;
 
-    fn from_docs(cursor: mongodb::cursor::Cursor) -> Result<Vec<Self>, BackendError> {
+    fn from_docs(cursor: mongodb::cursor::Cursor) -> WalletResult<Vec<Self>> {
         cursor.map(|result| match result {
             Ok(doc) => Self::from_doc(doc),
             Err(e) => Err(dang!(Database, e)),
-        }).collect::<Result<Vec<Self>, BackendError>>()
+        }).collect::<WalletResult<Vec<Self>>>()
     }
 
-    fn from_doc(doc: mongodb::ordered::OrderedDocument) -> Result<Self, BackendError> {
+    fn from_doc(doc: mongodb::ordered::OrderedDocument) -> WalletResult<Self> {
         // Since I don't want to rename the id field to keep the REST API pretty,
         // I need to do some surgery here. Note that some models, like Broker, use
         // slugs as their IDs instead of ObjectIds, so we need to handle the two
@@ -39,7 +39,7 @@ pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
         }
     }
 
-    fn to_doc(&self) -> Result<mongodb::ordered::OrderedDocument, BackendError> {
+    fn to_doc(&self) -> WalletResult<mongodb::ordered::OrderedDocument> {
         // Reverse surgery (see above) on the id, to rename it properly. Do we need to handle
         // models with ObjectId at all?
         fn fix_id(doc: &mut mongodb::ordered::OrderedDocument) {
@@ -60,7 +60,7 @@ pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
     }
 }
 
-pub fn get<'de, T>(wallet: &mongodb::db::Database) -> Result<Vec<T>, BackendError>
+pub fn get<'de, T>(wallet: &mongodb::db::Database) -> WalletResult<Vec<T>>
     where T: Queryable<'de>
 {
     let cursor = match wallet.collection(T::collection_name()).find(None, None) {
@@ -74,7 +74,7 @@ fn string_to_objectid(oid: &String) -> Result<bson::oid::ObjectId, bson::oid::Er
     bson::oid::ObjectId::with_string(oid.as_str())
 }
 
-fn objectid_to_string(oid: Option<bson::Bson>) -> Result<String, BackendError> {
+fn objectid_to_string(oid: Option<bson::Bson>) -> WalletResult<String> {
     let oid = oid.ok_or(dang!(Bson, "Tried to use None as ObjectId when converting to String"))?;
     oid.as_object_id().map(|oid| oid.to_string())
         .ok_or(dang!(Bson, format!("Could not convert {:?} to String", oid)))
@@ -88,7 +88,7 @@ fn filter_from_oid(oid: &String) -> bson::ordered::OrderedDocument {
     }
 }
 
-pub fn get_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> Result<T, BackendError>
+pub fn get_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> WalletResult<T>
     where T: Queryable<'de>
 {
     match wallet.collection(T::collection_name()).find_one(Some(filter_from_oid(&oid)), None) {
@@ -100,7 +100,7 @@ pub fn get_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> Result<T,
     }
 }
 
-pub fn insert_one<'de, T>(wallet: &mongodb::db::Database, obj: T) -> Result<T, BackendError>
+pub fn insert_one<'de, T>(wallet: &mongodb::db::Database, obj: T) -> WalletResult<T>
     where T: Queryable<'de>
 {
     let mut doc = T::to_doc(&obj)?;
@@ -115,7 +115,7 @@ pub fn insert_one<'de, T>(wallet: &mongodb::db::Database, obj: T) -> Result<T, B
     }
 }
 
-pub fn update_one<'de, T>(wallet: &mongodb::db::Database, oid: String, obj: T) -> Result<T, BackendError>
+pub fn update_one<'de, T>(wallet: &mongodb::db::Database, oid: String, obj: T) -> WalletResult<T>
     where T: Queryable<'de>
 {
     let mut doc = T::to_doc(&obj)?;
@@ -130,7 +130,7 @@ pub fn update_one<'de, T>(wallet: &mongodb::db::Database, oid: String, obj: T) -
     }
 }
 
-pub fn delete_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> Result<T, BackendError>
+pub fn delete_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> WalletResult<T>
     where T: Queryable<'de>
 {
     let result = get_one::<T>(wallet, oid.clone()).map(|results| results)?;

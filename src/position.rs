@@ -19,7 +19,7 @@ pub struct Position {
     pub date: DateTime<Local>,
 }
 
-fn get_safely<'de, T>(doc: &bson::ordered::OrderedDocument, key: &str) -> Result<T, BackendError>
+fn get_safely<'de, T>(doc: &bson::ordered::OrderedDocument, key: &str) -> WalletResult<T>
     where T: Deserialize<'de>
 {
     if let Some(value) = doc.get(key) {
@@ -36,7 +36,7 @@ impl Position {
         db: &mongodb::db::Database,
         symbol: &str,
         date_to: Option<Date<Local>>
-    ) -> Result<Position, BackendError>
+    ) -> WalletResult<Position>
     {
         let collection = db.collection(BaseOperation::collection_name());
 

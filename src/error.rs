@@ -8,6 +8,8 @@ use rocket_okapi::util::add_schema_response;
 use std::io::Cursor;
 
 
+pub type WalletResult<T> = Result<T, BackendError>;
+
 #[derive(Clone, Debug, JsonSchema)]
 pub enum BackendError {
     Bson(String),

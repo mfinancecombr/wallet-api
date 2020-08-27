@@ -3,7 +3,7 @@ use rocket_contrib::json::Json;
 use rocket_okapi::{openapi, JsonSchema};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{BackendError};
+use crate::error::{WalletResult};
 use crate::rest::*;
 use crate::walletdb::*;
 
@@ -25,7 +25,7 @@ impl<'de> Queryable<'de> for Broker {
 /// Adds a new broker
 #[openapi]
 #[post("/brokers", data = "<broker>")]
-pub fn add_broker(db: WalletDB, broker: Json<Broker>) -> Result<Json<Broker>, BackendError> {
+pub fn add_broker(db: WalletDB, broker: Json<Broker>) -> WalletResult<Json<Broker>> {
     api_add(db, broker)
 }
 
@@ -34,7 +34,7 @@ pub fn add_broker(db: WalletDB, broker: Json<Broker>) -> Result<Json<Broker>, Ba
 /// Lists all brokers
 #[openapi]
 #[get("/brokers")]
-pub fn get_brokers(db: WalletDB) -> Result<Rest<Json<Vec<Broker>>>, BackendError> {
+pub fn get_brokers(db: WalletDB) -> WalletResult<Rest<Json<Vec<Broker>>>> {
     api_get::<Broker>(db)
 }
 
@@ -43,7 +43,7 @@ pub fn get_brokers(db: WalletDB) -> Result<Rest<Json<Vec<Broker>>>, BackendError
 /// Get a specific broker
 #[openapi]
 #[get("/brokers/<oid>")]
-pub fn get_broker_by_oid(db: WalletDB, oid: String) -> Result<Json<Broker>, BackendError> {
+pub fn get_broker_by_oid(db: WalletDB, oid: String) -> WalletResult<Json<Broker>> {
     api_get_one::<Broker>(db, oid)
 }
 
@@ -52,7 +52,7 @@ pub fn get_broker_by_oid(db: WalletDB, oid: String) -> Result<Json<Broker>, Back
 /// Update a specific broker
 #[openapi]
 #[put("/brokers/<oid>", data = "<broker>")]
-pub fn update_broker_by_oid(db: WalletDB, oid: String, broker: Json<Broker>) -> Result<Json<Broker>, BackendError> {
+pub fn update_broker_by_oid(db: WalletDB, oid: String, broker: Json<Broker>) -> WalletResult<Json<Broker>> {
     api_update::<Broker>(db, oid, broker)
 }
 
@@ -61,6 +61,6 @@ pub fn update_broker_by_oid(db: WalletDB, oid: String, broker: Json<Broker>) -> 
 /// Delete a specific broker
 #[openapi]
 #[delete("/brokers/<oid>")]
-pub fn delete_broker_by_oid(db: WalletDB, oid: String) -> Result<Json<Broker>, BackendError> {
+pub fn delete_broker_by_oid(db: WalletDB, oid: String) -> WalletResult<Json<Broker>> {
     api_delete::<Broker>(db, oid)
 }
