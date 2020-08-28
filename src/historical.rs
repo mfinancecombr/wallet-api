@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use yahoo_finance::{history, Bar};
 
 use crate::error::{BackendError, WalletResult};
+use crate::scheduling::LockMap;
 use crate::walletdb::WalletDB;
 
 
@@ -42,6 +43,9 @@ pub fn refresh_historical_for_symbol(db: WalletDB, symbol: String) -> WalletResu
 }
 
 fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> WalletResult<()> {
+    // Ensure we do not try to refresh the same symbol more than once at a time.
+    let _guard = LockMap::lock("historical", symbol);
+
     let mut since = DateTime::<Utc>::from(Local.ymd(2006, 1, 1).and_hms(0, 0, 0));
 
     // First check if we need to override our since constraint, as we may

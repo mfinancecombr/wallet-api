@@ -10,6 +10,7 @@ use yahoo_finance::{history};
 
 use crate::error::*;
 use crate::operation::{BaseOperation, OperationKind};
+use crate::scheduling::LockMap;
 use crate::walletdb::Queryable;
 
 
@@ -53,6 +54,9 @@ impl Position {
         date_to: Option<Date<Local>>
     ) -> WalletResult<Position>
     {
+        // Ensure we do not try to calculate for the same symbol more than once at a time.
+        let _guard = LockMap::lock(BaseOperation::collection_name(), symbol);
+
         let collection = db.collection(BaseOperation::collection_name());
 
         let date_to = date_to.unwrap_or(Local::today()).and_hms(23, 59, 59);
