@@ -1,5 +1,5 @@
 [package]
-name = "finance-wallet-api-rs"
+name = "wallet-api"
 version = "0.1.0"
 authors = ["Gustavo Noronha Silva <gustavo.noronha@collabora.com>"]
 edition = "2018"
