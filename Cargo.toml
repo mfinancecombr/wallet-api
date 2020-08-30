@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
 lazy_static = "1.4"
 schemars = { version = "0.8.0-alpha-4", features = ["preserve_order", "chrono"] }
 okapi = { version = "0.5.0-alpha-1" }
@@ -16,7 +17,8 @@ rocket_cors = "0.5.1"
 rocket_okapi = { version = "0.6.0-alpha-1" }
 rocket = { version = "0.4.3", default-features = false }
 serde = "1.0"
-yahoo-finance = "0.2"
+tokio = { version = "0.2", features = ["full"] }
+yahoo-finance = { git = "https://github.com/kov/yahoo-finance-rs.git" }
 
 [dependencies.rocket_contrib]
 version = "0.4.3"

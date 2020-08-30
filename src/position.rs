@@ -47,6 +47,109 @@ fn get_safely<'de, T>(doc: &bson::ordered::OrderedDocument, key: &str) -> Wallet
     }
 }
 
+#[tokio::main]
+async fn current_price_for_symbol(symbol: String, date_to: DateTime<Local>) -> f64 {
+    let ysymbol= format!("{}.SA", &symbol);
+    let date_from = date_to.date().and_hms(0, 0, 0);
+    let bar = history::retrieve_range(
+        &ysymbol,
+        DateTime::<Utc>::from(date_from),
+        Some(DateTime::<Utc>::from(date_to)),
+    ).await.ok().and_then(|mut bar| bar.pop());
+
+    if let Some(bar) = bar {
+        bar.close
+    } else {
+        f64::NAN
+    }
+}
+
+#[tokio::main]
+async fn do_calculate_for_symbol(
+    db: &mongodb::db::Database,
+    symbol: String,
+    date_to: DateTime<Local>
+) -> WalletResult<Position> {
+    let collection = db.collection(BaseOperation::collection_name());
+
+    let filter = doc!{
+        "$and": [
+            { "symbol": &symbol },
+            {
+                "time": {
+                    "$lte": date_to.with_timezone(&Utc).to_rfc3339()
+                }
+            }
+        ]
+    };
+
+    let cursor = match collection.find(Some(filter), None) {
+        Ok(cursor) => cursor,
+        Err(e) => {
+            return Err(dang!(Database, e));
+        }
+    };
+
+    let mut total_cost = 0f64;
+    let mut total_quantity = 0i64;
+    let mut total_realized = 0f64;
+    let mut sales = Vec::<Sale>::new();
+
+    for document in cursor {
+        if let Ok(document) = document {
+            let quantity = get_safely::<i64>(&document, "quantity")?;
+            let kind = get_safely::<OperationKind>(&document, "type")?;
+            match kind {
+                OperationKind::Purchase => {
+                    let price = get_safely::<f64>(&document, "price")?;
+                    total_cost += price * quantity as f64;
+                    total_quantity += quantity;
+                },
+                OperationKind::Sale => {
+                    /* When selling we need to use the average price at the moment
+                     * of the sale for the average calculation to work. We may
+                     * take out too little if the current price is lower or too
+                     * much, otherwise.
+                     */
+                    let cost_price = total_cost / total_quantity as f64;
+                    total_cost -= cost_price * quantity as f64;
+                    total_quantity -= quantity;
+
+                    let sell_price = get_safely::<f64>(&document, "price")?;
+                    total_realized += quantity as f64 * sell_price;
+
+                    let time = get_safely::<DateTime<Utc>>(&document, "time")?;
+                    sales.push(Sale {
+                        time: DateTime::<Local>::from(time),
+                        quantity: quantity,
+                        cost_price: cost_price,
+                        sell_price: sell_price,
+                    })
+                },
+            }
+        }
+    }
+
+    let average;
+    if total_quantity == 0 || total_cost == 0.0 {
+        average = 0.0;
+    } else {
+        average = total_cost / total_quantity as f64;
+    }
+
+    Ok(Position {
+        symbol: symbol,
+        cost_basis: total_cost,
+        quantity: total_quantity,
+        average_price: average,
+        time: date_to,
+        current_price: 0.0,
+        gain: 0.0,
+        realized: total_realized,
+        sales: sales,
+    })
+}
+
 impl Position {
     pub fn calculate_for_symbol(
         db: &mongodb::db::Database,
@@ -57,106 +160,25 @@ impl Position {
         // Ensure we do not try to calculate for the same symbol more than once at a time.
         let _guard = LockMap::lock(BaseOperation::collection_name(), symbol);
 
-        let collection = db.collection(BaseOperation::collection_name());
-
         let date_to = date_to.unwrap_or(Local::today()).and_hms(23, 59, 59);
-        let filter = doc!{
-            "$and": [
-                { "symbol": symbol },
-                {
-                    "time": {
-                        "$lte": date_to.with_timezone(&Utc).to_rfc3339()
-                    }
-                }
-            ]
-        };
 
         // Fire a background thread to get the current price.
-        let ysymbol= format!("{}.SA", &symbol);
+        let ysymbol = symbol.to_string();
         let current_price = std::thread::spawn(move || {
-            let date_from = date_to.date().and_hms(0, 0, 0);
-            let bar = history::retrieve_range(
-                &ysymbol,
-                DateTime::<Utc>::from(date_from),
-                Some(DateTime::<Utc>::from(date_to)),
-            ).ok().and_then(|mut bar| bar.pop());
-
-            if let Some(bar) = bar {
-                bar.close
-            } else {
-                f64::NAN
-            }
+            current_price_for_symbol(ysymbol, date_to)
         });
 
-        let cursor = match collection.find(Some(filter), None) {
-            Ok(cursor) => cursor,
-            Err(e) => {
-                return Err(dang!(Database, e));
-            }
-        };
+        let db = db.clone();
+        let dsymbol = symbol.to_string();
+        let mut position = std::thread::spawn(move || {
+            do_calculate_for_symbol(&db, dsymbol, date_to)
+        }).join().unwrap()?;
 
-        let mut total_cost = 0f64;
-        let mut total_quantity = 0i64;
-        let mut total_realized = 0f64;
-        let mut sales = Vec::<Sale>::new();
-
-        for document in cursor {
-            if let Ok(document) = document {
-                let quantity = get_safely::<i64>(&document, "quantity")?;
-                let kind = get_safely::<OperationKind>(&document, "type")?;
-                match kind {
-                    OperationKind::Purchase => {
-                        let price = get_safely::<f64>(&document, "price")?;
-                        total_cost += price * quantity as f64;
-                        total_quantity += quantity;
-                    },
-                    OperationKind::Sale => {
-                        /* When selling we need to use the average price at the moment
-                         * of the sale for the average calculation to work. We may
-                         * take out too little if the current price is lower or too
-                         * much, otherwise.
-                         */
-                        let cost_price = total_cost / total_quantity as f64;
-                        total_cost -= cost_price * quantity as f64;
-                        total_quantity -= quantity;
-
-                        let sell_price = get_safely::<f64>(&document, "price")?;
-                        total_realized += quantity as f64 * sell_price;
-
-                        let time = get_safely::<DateTime<Utc>>(&document, "time")?;
-                        sales.push(Sale {
-                            time: DateTime::<Local>::from(time),
-                            quantity: quantity,
-                            cost_price: cost_price,
-                            sell_price: sell_price,
-                        })
-                    },
-                }
-            }
-        }
-
-        let average;
-        if total_quantity == 0 || total_cost == 0.0 {
-            average = 0.0;
-        } else {
-            average = total_cost / total_quantity as f64;
-        }
-
-        // Get the result of our background thread. We just unwrap the
-        // results as all errors are handled, so any panics should take
-        // down execution anyway.
         let current_price = current_price.join().unwrap();
-        Ok(Position {
-            symbol: symbol.to_string(),
-            cost_basis: total_cost,
-            quantity: total_quantity,
-            average_price: average,
-            time: date_to,
-            current_price: current_price,
-            gain: current_price * total_quantity as f64 - total_cost,
-            realized: total_realized,
-            sales: sales,
-        })
+        position.current_price = current_price;
+        position.gain = current_price * position.quantity as f64 - position.cost_basis;
+
+        Ok(position)
     }
 
     pub fn calculate_all(db: &mongodb::db::Database) -> WalletResult<Vec<Position>> {

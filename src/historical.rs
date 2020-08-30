@@ -1,4 +1,5 @@
-use chrono::{DateTime, Duration, Local, TimeZone, Utc};
+use futures::executor::block_on;
+use chrono::{DateTime, Duration, Local, NaiveDateTime, TimeZone, Utc};
 use mongodb::coll::options::FindOptions;
 use mongodb::db::ThreadedDatabase;
 use mongodb::{Bson, bson, doc};
@@ -26,12 +27,12 @@ impl From<Bar> for AssetDay {
     fn from(bar: Bar) -> AssetDay {
         AssetDay {
             symbol: String::new(),
-            time: bar.timestamp,
+            time: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(bar.timestamp as i64, 0), Utc),
             open: bar.open,
             high: bar.high,
             low: bar.low,
             close: bar.close,
-            volume: bar.volume as i64
+            volume: bar.volume.unwrap_or(0) as i64
         }
     }
 }
@@ -74,11 +75,13 @@ fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> Wallet
         return Ok(())
     }
 
-    let data = history::retrieve_range(
-        &format!("{}.SA", symbol),
-        since,
-        Some(yesterday)
-    ).map_err(|e| dang!(Yahoo, e))?;
+    let data = block_on(async {
+        history::retrieve_range(
+            &format!("{}.SA", symbol),
+            since,
+            Some(yesterday)
+        ).await
+    }).map_err(|e| dang!(Yahoo, e))?;
 
     let mut docs = Vec::<bson::ordered::OrderedDocument>::new();
     for bar in data {
