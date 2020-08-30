@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
+clokwerk = "0.3"
 futures = "0.3"
 lazy_static = "1.4"
 schemars = { version = "0.8.0-alpha-4", features = ["preserve_order", "chrono"] }

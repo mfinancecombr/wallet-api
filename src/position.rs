@@ -9,7 +9,7 @@ use serde::{Serialize, Deserialize};
 use yahoo_finance::{history};
 
 use crate::error::*;
-use crate::operation::{BaseOperation, OperationKind};
+use crate::operation::{BaseOperation, OperationKind, get_distinct_symbols};
 use crate::scheduling::LockMap;
 use crate::walletdb::Queryable;
 
@@ -182,20 +182,12 @@ impl Position {
     }
 
     pub fn calculate_all(db: &mongodb::db::Database) -> WalletResult<Vec<Position>> {
-        let collection = db.collection("operations");
-
-        let symbols = collection.distinct("symbol", None, None)
-            .map_err(|e| dang!(Database, e))?;
-
-        let symbols = symbols.iter().map(|s|
-            s.as_str()
-                .ok_or(dang!(Bson, "Failure converting string (symbol)"))
-        ).collect::<WalletResult<Vec<&str>>>()?;
-
         let positions = Mutex::new(Vec::<Position>::new());
+
+        let symbols = get_distinct_symbols(db)?;
         symbols.into_par_iter()
             .try_for_each::<_, WalletResult<_>>(|symbol| {
-                let position = Position::calculate_for_symbol(db, symbol, None)?;
+                let position = Position::calculate_for_symbol(db, &symbol, None)?;
                 positions.lock().unwrap().push(position);
                 Ok(())
             }

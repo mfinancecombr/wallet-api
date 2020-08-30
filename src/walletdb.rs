@@ -1,3 +1,4 @@
+use std::fmt;
 use rocket_contrib::database;
 use rocket_contrib::databases::mongodb;
 use mongodb::db::ThreadedDatabase;
@@ -9,6 +10,13 @@ use crate::error::{BackendError, WalletResult};
 
 #[database("wallet")]
 pub struct WalletDB(mongodb::db::Database);
+
+// Had to implement this manually as derive was not being picked up?
+impl fmt::Debug for WalletDB {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
     fn collection_name() -> &'static str;

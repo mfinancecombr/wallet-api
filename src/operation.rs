@@ -1,8 +1,10 @@
 use std::fmt::{Debug};
 use chrono::{Local, DateTime};
+use mongodb::db::ThreadedDatabase;
 use rocket_okapi::{JsonSchema};
 use serde::{Deserialize, Serialize};
 
+use crate::error::{BackendError, WalletResult};
 use crate::walletdb::Queryable;
 
 
@@ -56,4 +58,17 @@ fn default_broker() -> String {
 
 fn default_portfolio() -> String {
     "default".to_string()
+}
+
+pub fn get_distinct_symbols(wallet: &mongodb::db::Database) -> WalletResult<Vec<String>> {
+    let collection = wallet.collection("operations");
+
+    let symbols = collection.distinct("symbol", None, None)
+        .map_err(|e| dang!(Database, e))?;
+
+    symbols.iter().map(|s|
+        s.as_str()
+            .ok_or(dang!(Bson, "Failure converting string (symbol)"))
+            .map(|s| s.to_string())
+    ).collect::<WalletResult<Vec<String>>>()
 }

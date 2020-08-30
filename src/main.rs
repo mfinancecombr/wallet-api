@@ -20,6 +20,7 @@ mod walletdb;
 use broker::*;
 use historical::*;
 use portfolio::*;
+use scheduling::Scheduler;
 use stock::*;
 use walletdb::WalletDB;
 
@@ -48,6 +49,7 @@ fn main() {
                 delete_stock_operation_by_oid,
                 get_stock_position_by_symbol,
 
+                refresh_historicals,
                 refresh_historical_for_symbol,
 
                 portfolio_position,
@@ -61,6 +63,7 @@ fn main() {
             }),
         )
         .attach(WalletDB::fairing())
+        .attach(Scheduler::fairing())
         .attach(cors)
         .launch();
 }

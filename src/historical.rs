@@ -1,13 +1,14 @@
-use futures::executor::block_on;
 use chrono::{DateTime, Duration, Local, NaiveDateTime, TimeZone, Utc};
 use mongodb::coll::options::FindOptions;
 use mongodb::db::ThreadedDatabase;
 use mongodb::{Bson, bson, doc};
+use rayon::prelude::*;
 use rocket_okapi::{openapi};
 use serde::{Deserialize, Serialize};
 use yahoo_finance::{history, Bar};
 
 use crate::error::{BackendError, WalletResult};
+use crate::operation::get_distinct_symbols;
 use crate::scheduling::LockMap;
 use crate::walletdb::WalletDB;
 
@@ -27,7 +28,7 @@ impl From<Bar> for AssetDay {
     fn from(bar: Bar) -> AssetDay {
         AssetDay {
             symbol: String::new(),
-            time: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(bar.timestamp as i64, 0), Utc),
+            time: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp((bar.timestamp / 1000) as i64, 0), Utc),
             open: bar.open,
             high: bar.high,
             low: bar.low,
@@ -37,13 +38,40 @@ impl From<Bar> for AssetDay {
     }
 }
 
+/// # Triggers a full refresh of historical data
+///
+/// Triggers a full refresh of historical price data for all assets present in the
+/// database. Does not return data.
 #[openapi]
-#[post("/assets/refresh/<symbol>")]
+#[post("/historicals/refresh")]
+pub fn refresh_historicals(db: WalletDB) -> WalletResult<()> {
+    refresh_historical_all(&*db)
+}
+
+/// # Triggers a full refresh of historical data for a symbol
+///
+/// Triggers a full refresh of historical price data for a symbol. Does not return data.
+#[openapi]
+#[post("/historicals/refresh/<symbol>")]
 pub fn refresh_historical_for_symbol(db: WalletDB, symbol: String) -> WalletResult<()> {
     do_refresh_for_symbol(&*db, &symbol)
 }
 
-fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> WalletResult<()> {
+pub fn refresh_historical_all(wallet: &mongodb::db::Database) -> WalletResult<()> {
+    let symbols = get_distinct_symbols(wallet)?;
+
+    symbols.into_par_iter()
+        .try_for_each::<_, WalletResult<_>>(|symbol| {
+            do_refresh_for_symbol(wallet, &symbol)?;
+            Ok(())
+        }
+    )?;
+
+    Ok(())
+}
+
+#[tokio::main]
+async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> WalletResult<()> {
     // Ensure we do not try to refresh the same symbol more than once at a time.
     let _guard = LockMap::lock("historical", symbol);
 
@@ -75,13 +103,11 @@ fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> Wallet
         return Ok(())
     }
 
-    let data = block_on(async {
-        history::retrieve_range(
+    let data = history::retrieve_range(
             &format!("{}.SA", symbol),
             since,
             Some(yesterday)
-        ).await
-    }).map_err(|e| dang!(Yahoo, e))?;
+    ).await.map_err(|e| dang!(Yahoo, e))?;
 
     let mut docs = Vec::<bson::ordered::OrderedDocument>::new();
     for bar in data {

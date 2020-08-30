@@ -1,5 +1,13 @@
 use std::collections::HashSet;
 use std::sync::Mutex;
+use clokwerk;
+use clokwerk::TimeUnits;
+use rocket::{Rocket};
+use rocket::fairing::{Fairing, Info, Kind};
+
+use crate::historical::refresh_historical_all;
+use crate::position::Position;
+use crate::walletdb::WalletDB;
 
 
 pub struct LockMap(HashSet<(String, String)>);
@@ -47,5 +55,44 @@ impl LockMap {
         LOCK_MAP.lock().map(|mut lock_map| {
             lock_map.0.remove(&tuple);
         }).expect("Failed to lock static lock map");
+    }
+}
+
+pub struct Scheduler {
+    inner: Mutex<clokwerk::Scheduler>,
+}
+
+impl Fairing for Scheduler {
+    fn info(&self) -> Info {
+        Info {
+            name: "Wallet Scheduler",
+            kind: Kind::Launch
+        }
+    }
+
+    fn on_launch(&self, rocket: &Rocket) {
+        let db = WalletDB::get_one(&rocket).expect("Could not get DB connection");
+
+        std::thread::spawn(move || {
+            if let Err(e) = refresh_historical_all(&db) {
+                println!("Failed to pre-calculate historicals: {:?}", e);
+            }
+
+            if let Err(e) = Position::calculate_all(&db) {
+                println!("Failed to pre-calculate positions: {:?}", e);
+            }
+        });
+
+        self.inner.lock().map(|mut scheduler| {
+            scheduler.every(1.day()).at("2:00 am");
+        }).expect("Failure locking Scheduler mutex");
+    }
+}
+
+impl Scheduler {
+    pub fn fairing() -> Self {
+        Scheduler {
+            inner: Mutex::new(clokwerk::Scheduler::new()),
+        }
     }
 }
