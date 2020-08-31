@@ -1,6 +1,7 @@
 use std::fmt;
 use rocket_contrib::database;
 use rocket_contrib::databases::mongodb;
+use mongodb::ThreadedClient;
 use mongodb::db::ThreadedDatabase;
 use mongodb::{Bson, bson, doc};
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,15 @@ pub struct WalletDB(mongodb::db::Database);
 impl fmt::Debug for WalletDB {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl WalletDB {
+    pub fn get_connection() -> mongodb::db::Database {
+        // FIXME: use the same configuration as we have for the pool.
+        let db_client = mongodb::Client::with_uri("mongodb://127.0.0.1:27017/")
+            .expect("Could not connect to mongodb");
+        db_client.db("wallet")
     }
 }
 

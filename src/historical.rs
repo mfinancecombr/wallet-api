@@ -10,18 +10,22 @@ use yahoo_finance::{history, Bar};
 use crate::error::{BackendError, WalletResult};
 use crate::operation::get_distinct_symbols;
 use crate::scheduling::LockMap;
-use crate::walletdb::WalletDB;
+use crate::walletdb::{Queryable, WalletDB};
 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct AssetDay {
-    symbol: String,
-    time: DateTime<Utc>,
-    open: f64,
-    high: f64,
-    low: f64,
-    close: f64,
-    volume: i64,
+pub struct AssetDay {
+    pub symbol: String,
+    pub time: DateTime<Utc>,
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub close: f64,
+    pub volume: i64,
+}
+
+impl<'de> Queryable<'de> for AssetDay {
+    fn collection_name() -> &'static str { "historical" }
 }
 
 impl From<Bar> for AssetDay {
@@ -104,10 +108,24 @@ async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> 
     }
 
     let data = history::retrieve_range(
-            &format!("{}.SA", symbol),
-            since,
-            Some(yesterday)
-    ).await.map_err(|e| dang!(Yahoo, e))?;
+        &format!("{}.SA", symbol),
+        since,
+        Some(yesterday)
+    ).await;
+
+    // HACK: yahoo-finance-rs will fail on queries for days with no data
+    // and it doesn't provide a good way of understanding what kind of error
+    // happened.
+    let data = match data {
+        Ok(data) => data,
+        Err(e) => {
+            if format!("{:?}", e).contains("BadData {") {
+                Vec::<Bar>::new()
+            } else {
+                return Err(dang!(Yahoo, format!("{}: {}", symbol, e)));
+            }
+        }
+    };
 
     let mut docs = Vec::<bson::ordered::OrderedDocument>::new();
     for bar in data {
@@ -121,6 +139,10 @@ async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> 
             .ok_or(dang!(Bson, "Could not convert to Document"))?;
 
         docs.push(doc.clone());
+    }
+
+    if docs.len() == 0 {
+        return Ok(());
     }
 
     wallet.collection("historical").insert_many(docs, None)
