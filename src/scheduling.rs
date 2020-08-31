@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 use clokwerk;
 use clokwerk::TimeUnits;
+use log::{info, warn};
 use rocket::{Rocket};
 use rocket::fairing::{Fairing, Info, Kind};
 
@@ -74,13 +75,19 @@ impl Fairing for Scheduler {
         let db = WalletDB::get_one(&rocket).expect("Could not get DB connection");
 
         std::thread::spawn(move || {
+            info!("=> Starting on-launch full refresh…");
+
             if let Err(e) = refresh_historical_all(&db) {
-                println!("Failed to pre-calculate historicals: {:?}", e);
+                warn!("failed to pre-calculate historicals: {:?}", e);
             }
 
+            info!("=> Done refreshing historicals…");
+
             if let Err(e) = Position::calculate_all(&db) {
-                println!("Failed to pre-calculate positions: {:?}", e);
+                warn!("failed to pre-calculate positions: {:?}", e);
             }
+
+            info!("=> Done calculating position snapshots. On-launch refresh complete.");
         });
 
         self.inner.lock().map(|mut scheduler| {
