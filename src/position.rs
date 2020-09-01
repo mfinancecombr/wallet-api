@@ -341,18 +341,16 @@ impl Position {
 
 #[cfg(test)]
 mod tests {
-    use mongodb::ThreadedClient;
     use std::vec::Vec;
 
     use super::*;
     use crate::operation::{AssetKind, OperationKind};
     use crate::stock::StockOperation;
 
+
     #[test]
     fn position_calculation() {
-        let db_client = mongodb::Client::with_uri("mongodb://127.0.0.1:27017/")
-            .expect("Could not connect to mongodb");
-        let db = db_client.db("finance-wallet-fake-test");
+        let db = WalletDB::get_connection();
 
         assert!(db.collection(BaseOperation::collection_name()).delete_many(doc!{}, None).is_ok(), true);
 
@@ -422,9 +420,7 @@ mod tests {
 
     #[test]
     fn test_calculate_all() {
-        let db_client = mongodb::Client::with_uri("mongodb://127.0.0.1:27017/")
-            .expect("Could not connect to mongodb");
-        let db = db_client.db("wallet-fake-test");
+        let db = WalletDB::get_connection();
 
         Position::calculate_all(&db).expect("Something went wrong");
     }

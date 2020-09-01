@@ -24,7 +24,12 @@ impl WalletDB {
         // FIXME: use the same configuration as we have for the pool.
         let db_client = mongodb::Client::with_uri("mongodb://127.0.0.1:27017/")
             .expect("Could not connect to mongodb");
-        db_client.db("wallet")
+
+        if cfg!(test) {
+            db_client.db("wallet-fake-test")
+        } else {
+            db_client.db("wallet")
+        }
     }
 }
 

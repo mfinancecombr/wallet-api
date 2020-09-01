@@ -153,16 +153,14 @@ async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> 
 #[cfg(test)]
 mod tests {
     use chrono::Datelike;
-    use mongodb::ThreadedClient;
 
     use super::*;
 
 
     #[test]
     fn repeated_refreshes() {
-        let db_client = mongodb::Client::with_uri("mongodb://127.0.0.1:27017/")
-            .expect("Could not connect to mongodb");
-        let db = db_client.db("wallet-fake-test");
+        let db = WalletDB::get_connection();
+
         let collection = db.collection("historical");
 
         assert_eq!(collection.delete_many(doc!{}, None).is_ok(), true);
