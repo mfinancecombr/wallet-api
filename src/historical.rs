@@ -49,7 +49,7 @@ impl From<Bar> for AssetDay {
 #[openapi]
 #[post("/historicals/refresh")]
 pub fn refresh_historicals(db: WalletDB) -> WalletResult<()> {
-    refresh_historical_all(&*db)
+    Historical::refresh_all(&*db)
 }
 
 /// # Triggers a full refresh of historical data for a symbol
@@ -61,17 +61,21 @@ pub fn refresh_historical_for_symbol(db: WalletDB, symbol: String) -> WalletResu
     do_refresh_for_symbol(&*db, &symbol)
 }
 
-pub fn refresh_historical_all(wallet: &mongodb::db::Database) -> WalletResult<()> {
-    let symbols = get_distinct_symbols(wallet)?;
+pub struct Historical { }
 
-    symbols.into_par_iter()
-        .try_for_each::<_, WalletResult<_>>(|symbol| {
-            do_refresh_for_symbol(wallet, &symbol)?;
-            Ok(())
-        }
-    )?;
+impl Historical {
+    pub fn refresh_all(wallet: &mongodb::db::Database) -> WalletResult<()> {
+        let symbols = get_distinct_symbols(wallet)?;
 
-    Ok(())
+        symbols.into_par_iter()
+            .try_for_each::<_, WalletResult<_>>(|symbol| {
+                do_refresh_for_symbol(wallet, &symbol)?;
+                Ok(())
+            }
+        )?;
+
+        Ok(())
+    }
 }
 
 #[tokio::main]

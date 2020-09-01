@@ -6,7 +6,7 @@ use log::{info, warn};
 use rocket::{Rocket};
 use rocket::fairing::{Fairing, Info, Kind};
 
-use crate::historical::refresh_historical_all;
+use crate::historical::Historical;
 use crate::position::Position;
 use crate::walletdb::WalletDB;
 
@@ -77,7 +77,7 @@ impl Fairing for Scheduler {
         std::thread::spawn(move || {
             info!("=> Starting on-launch full refresh…");
 
-            if let Err(e) = refresh_historical_all(&db) {
+            if let Err(e) = Historical::refresh_all(&db) {
                 warn!("failed to pre-calculate historicals: {:?}", e);
             }
 
