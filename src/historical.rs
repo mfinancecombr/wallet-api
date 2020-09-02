@@ -142,12 +142,12 @@ async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> 
 
         let doc = doc
             .as_document()
-            .ok_or(dang!(Bson, "Could not convert to Document"))?;
+            .ok_or_else(|| dang!(Bson, "Could not convert to Document"))?;
 
         docs.push(doc.clone());
     }
 
-    if docs.len() == 0 {
+    if docs.is_empty() {
         return Ok(());
     }
 

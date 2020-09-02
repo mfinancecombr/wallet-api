@@ -126,7 +126,7 @@ async fn do_calculate_for_symbol(
             date_from = pos.time.with_timezone(&Utc);
             pos
         })
-        .unwrap_or(Position::new(&symbol));
+        .unwrap_or_else(|| Position::new(&symbol));
 
     let filter = doc! {
         "$and": [
@@ -185,9 +185,9 @@ async fn do_calculate_for_symbol(
 
                     position.sales.push(Sale {
                         time: position.time.with_timezone(&Local),
-                        quantity: quantity,
-                        cost_price: cost_price,
-                        sell_price: sell_price,
+                        quantity,
+                        cost_price,
+                        sell_price,
                     })
                 }
             }
@@ -337,7 +337,7 @@ impl Position {
                 }
             }
 
-            previous_date = Some(position.time.clone());
+            previous_date = Some(position.time);
         }
         info!("[{}] done saving Position snapshots", symbol);
 
@@ -389,7 +389,7 @@ mod tests {
         stock.operation.time = Local::now();
 
         sales.push(Sale {
-            time: stock.operation.time.clone(),
+            time: stock.operation.time,
             quantity: 50,
             cost_price: 10.0,
             sell_price: 12.0,
@@ -419,11 +419,11 @@ mod tests {
                 average_price: 7.0,
                 cost_basis: 700.0,
                 quantity: 100,
-                time: stock.operation.time.clone(),
+                time: stock.operation.time,
                 current_price: 0.0,
                 gain: 0.0,
                 realized: 600.0,
-                sales: sales,
+                sales,
             }
         );
     }
