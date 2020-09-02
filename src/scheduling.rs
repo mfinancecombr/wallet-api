@@ -1,4 +1,3 @@
-use clokwerk;
 use clokwerk::TimeUnits;
 use log::{info, warn};
 use rocket::fairing::{Fairing, Info, Kind};

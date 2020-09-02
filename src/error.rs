@@ -29,11 +29,11 @@ impl Responder<'static> for BackendError {
         let body;
         let status = match self {
             BackendError::Bson(msg) => {
-                body = msg.clone();
+                body = msg;
                 Status::new(500, "Bson")
             }
             BackendError::Database(msg) => {
-                body = msg.clone();
+                body = msg;
                 Status::new(500, "Database")
             }
             BackendError::NotFound => {
@@ -41,7 +41,7 @@ impl Responder<'static> for BackendError {
                 Status::NotFound
             }
             BackendError::Yahoo(msg) => {
-                body = msg.clone();
+                body = msg;
                 Status::new(500, "Yahoo")
             }
         };
@@ -57,7 +57,7 @@ impl OpenApiResponder<'static> for BackendError {
         let mut responses = Responses::default();
         let schema = gen.json_schema::<String>();
         add_schema_response(&mut responses, 500, "text/plain", schema.clone())?;
-        add_schema_response(&mut responses, 404, "text/plain", schema.clone())?;
+        add_schema_response(&mut responses, 404, "text/plain", schema)?;
         Ok(responses)
     }
 }

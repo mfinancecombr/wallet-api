@@ -72,7 +72,7 @@ pub fn get_distinct_symbols(wallet: &mongodb::db::Database) -> WalletResult<Vec<
         .iter()
         .map(|s| {
             s.as_str()
-                .ok_or(dang!(Bson, "Failure converting string (symbol)"))
+                .ok_or_else(|| dang!(Bson, "Failure converting string (symbol)"))
                 .map(|s| s.to_string())
         })
         .collect::<WalletResult<Vec<String>>>()

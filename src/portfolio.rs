@@ -8,5 +8,5 @@ use crate::walletdb::WalletDB;
 #[openapi]
 #[post("/portfolio/position")]
 pub fn portfolio_position(db: WalletDB) -> WalletResult<Json<Vec<Position>>> {
-    Position::calculate_all(&*db).map(|result| Json(result))
+    Position::calculate_all(&*db).map(Json)
 }

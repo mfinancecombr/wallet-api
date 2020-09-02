@@ -88,5 +88,5 @@ pub fn delete_stock_operation_by_oid(
 #[openapi]
 #[get("/stocks/position/<symbol>")]
 pub fn get_stock_position_by_symbol(db: WalletDB, symbol: String) -> WalletResult<Json<Position>> {
-    Position::calculate_for_symbol(&*db, &symbol).map(|position| Json(position))
+    Position::calculate_for_symbol(&*db, &symbol).map(Json)
 }

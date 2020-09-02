@@ -49,7 +49,7 @@ pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
         // I need to do some surgery here. Note that some models, like Broker, use
         // slugs as their IDs instead of ObjectIds, so we need to handle the two
         // possibilities here.
-        let mut doc = doc.clone();
+        let mut doc = doc;
         if let Some(id) = doc.remove("_id") {
             match id.as_object_id() {
                 Some(id) => doc.insert(String::from("id"), id.to_string()),
@@ -98,22 +98,23 @@ where
     T::from_docs(cursor)
 }
 
-fn string_to_objectid(oid: &String) -> Result<bson::oid::ObjectId, bson::oid::Error> {
-    bson::oid::ObjectId::with_string(oid.as_str())
+fn string_to_objectid(oid: &str) -> Result<bson::oid::ObjectId, bson::oid::Error> {
+    bson::oid::ObjectId::with_string(oid)
 }
 
 fn objectid_to_string(oid: Option<bson::Bson>) -> WalletResult<String> {
-    let oid = oid.ok_or(dang!(
-        Bson,
-        "Tried to use None as ObjectId when converting to String"
-    ))?;
-    oid.as_object_id().map(|oid| oid.to_string()).ok_or(dang!(
-        Bson,
-        format!("Could not convert {:?} to String", oid)
-    ))
+    let oid = oid.ok_or_else(|| {
+        dang!(
+            Bson,
+            "Tried to use None as ObjectId when converting to String"
+        )
+    })?;
+    oid.as_object_id()
+        .map(|oid| oid.to_string())
+        .ok_or_else(|| dang!(Bson, format!("Could not convert {:?} to String", oid)))
 }
 
-fn filter_from_oid(oid: &String) -> bson::ordered::OrderedDocument {
+fn filter_from_oid(oid: &str) -> bson::ordered::OrderedDocument {
     if let Ok(object_id) = string_to_objectid(oid) {
         doc! {"_id": object_id}
     } else {
@@ -129,7 +130,7 @@ where
         .collection(T::collection_name())
         .find_one(Some(filter_from_oid(&oid)), None)
     {
-        Ok(doc) => doc.map_or(Err(BackendError::NotFound), |doc| T::from_doc(doc)),
+        Ok(doc) => doc.map_or(Err(BackendError::NotFound), T::from_doc),
         Err(e) => Err(dang!(Database, e)),
     }
 }
@@ -176,7 +177,7 @@ pub fn delete_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> Wallet
 where
     T: Queryable<'de>,
 {
-    let result = get_one::<T>(wallet, oid.clone()).map(|results| results)?;
+    let result = get_one::<T>(wallet, oid.clone())?;
     match wallet
         .collection(T::collection_name())
         .delete_one(filter_from_oid(&oid), None)

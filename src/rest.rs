@@ -29,7 +29,7 @@ where
     fn responses(gen: &mut OpenApiGenerator) -> rocket_okapi::Result<Responses> {
         let mut responses = Responses::default();
         let schema = gen.json_schema::<String>();
-        add_schema_response(&mut responses, 200, "application/json", schema.clone())?;
+        add_schema_response(&mut responses, 200, "application/json", schema)?;
         Ok(responses)
     }
 }
@@ -38,7 +38,7 @@ pub fn api_add<'de, T>(db: WalletDB, operation: Json<T>) -> WalletResult<Json<T>
 where
     T: Queryable<'de>,
 {
-    insert_one::<T>(&*db, operation.into_inner()).map(|result| Json(result))
+    insert_one::<T>(&*db, operation.into_inner()).map(Json)
 }
 
 pub fn api_get<'de, T>(db: WalletDB) -> WalletResult<Rest<Json<Vec<T>>>>
@@ -55,19 +55,19 @@ pub fn api_get_one<'de, T>(db: WalletDB, oid: String) -> WalletResult<Json<T>>
 where
     T: Queryable<'de>,
 {
-    get_one::<T>(&*db, oid).map(|results| Json(results))
+    get_one::<T>(&*db, oid).map(Json)
 }
 
 pub fn api_update<'de, T>(db: WalletDB, oid: String, operation: Json<T>) -> WalletResult<Json<T>>
 where
     T: Queryable<'de>,
 {
-    update_one::<T>(&*db, oid, operation.into_inner()).map(|result| Json(result))
+    update_one::<T>(&*db, oid, operation.into_inner()).map(Json)
 }
 
 pub fn api_delete<'de, T>(db: WalletDB, oid: String) -> WalletResult<Json<T>>
 where
     T: Queryable<'de>,
 {
-    delete_one::<T>(&*db, oid).map(|result| Json(result))
+    delete_one::<T>(&*db, oid).map(Json)
 }
