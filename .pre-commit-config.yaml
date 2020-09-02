@@ -1,0 +1,38 @@
+repos:
+  - repo: local
+    hooks:
+      - id: trailing-whitespace-fixer
+        name: trailing-whitespace-fixer
+        entry: trailing-whitespace-fixer
+        language: system
+        types: [non-executable, file, text]
+        exclude_types: [markdown]
+
+      - id: end-of-file-fixer
+        name: end-of-file-fixer
+        entry: end-of-file-fixer
+        language: system
+        types: [non-executable, file, text]
+        exclude_types: [markdown]
+
+      - id: rustfmt
+        name: cargo fmt
+        entry: cargo fmt
+        pass_filenames: false
+        language: system
+        types: [rust]
+
+      - id: clippy
+        name: cargo clippy
+        entry: cargo clippy --all-targets --all-features -- -D warnings
+        pass_filenames: false
+        language: system
+        types: [rust]
+
+      - id: test
+        name: cargo test
+        entry: cargo test
+        pass_filenames: false
+        language: system
+        types: [rust]
+        stages: [push]
