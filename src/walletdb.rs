@@ -1,13 +1,12 @@
-use std::fmt;
+use mongodb::db::ThreadedDatabase;
+use mongodb::ThreadedClient;
+use mongodb::{bson, doc, Bson};
 use rocket_contrib::database;
 use rocket_contrib::databases::mongodb;
-use mongodb::ThreadedClient;
-use mongodb::db::ThreadedDatabase;
-use mongodb::{Bson, bson, doc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use crate::error::{BackendError, WalletResult};
-
 
 #[database("wallet")]
 pub struct WalletDB(mongodb::db::Database);
@@ -37,10 +36,12 @@ pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
     fn collection_name() -> &'static str;
 
     fn from_docs(cursor: mongodb::cursor::Cursor) -> WalletResult<Vec<Self>> {
-        cursor.map(|result| match result {
-            Ok(doc) => Self::from_doc(doc),
-            Err(e) => Err(dang!(Database, e)),
-        }).collect::<WalletResult<Vec<Self>>>()
+        cursor
+            .map(|result| match result {
+                Ok(doc) => Self::from_doc(doc),
+                Err(e) => Err(dang!(Database, e)),
+            })
+            .collect::<WalletResult<Vec<Self>>>()
     }
 
     fn from_doc(doc: mongodb::ordered::OrderedDocument) -> WalletResult<Self> {
@@ -52,7 +53,7 @@ pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
         if let Some(id) = doc.remove("_id") {
             match id.as_object_id() {
                 Some(id) => doc.insert(String::from("id"), id.to_string()),
-                None => doc.insert_bson(String::from("id"), id)
+                None => doc.insert_bson(String::from("id"), id),
             };
         }
 
@@ -75,20 +76,24 @@ pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
 
         match bson::to_bson(self) {
             Ok(doc) => match doc {
-                Bson::Document(mut doc) => { fix_id(&mut doc); Ok(doc) },
-                _ => Err(dang!(Bson, "Failed to create Document"))
+                Bson::Document(mut doc) => {
+                    fix_id(&mut doc);
+                    Ok(doc)
+                }
+                _ => Err(dang!(Bson, "Failed to create Document")),
             },
-            Err(e) => Err(dang!(Bson, e))
+            Err(e) => Err(dang!(Bson, e)),
         }
     }
 }
 
 pub fn get<'de, T>(wallet: &mongodb::db::Database) -> WalletResult<Vec<T>>
-    where T: Queryable<'de>
+where
+    T: Queryable<'de>,
 {
     let cursor = match wallet.collection(T::collection_name()).find(None, None) {
         Ok(cursor) => cursor,
-        Err(e) => return Err(dang!(Database, e))
+        Err(e) => return Err(dang!(Database, e)),
     };
     T::from_docs(cursor)
 }
@@ -98,33 +103,40 @@ fn string_to_objectid(oid: &String) -> Result<bson::oid::ObjectId, bson::oid::Er
 }
 
 fn objectid_to_string(oid: Option<bson::Bson>) -> WalletResult<String> {
-    let oid = oid.ok_or(dang!(Bson, "Tried to use None as ObjectId when converting to String"))?;
-    oid.as_object_id().map(|oid| oid.to_string())
-        .ok_or(dang!(Bson, format!("Could not convert {:?} to String", oid)))
+    let oid = oid.ok_or(dang!(
+        Bson,
+        "Tried to use None as ObjectId when converting to String"
+    ))?;
+    oid.as_object_id().map(|oid| oid.to_string()).ok_or(dang!(
+        Bson,
+        format!("Could not convert {:?} to String", oid)
+    ))
 }
 
 fn filter_from_oid(oid: &String) -> bson::ordered::OrderedDocument {
     if let Ok(object_id) = string_to_objectid(oid) {
-        doc!{"_id": object_id}
+        doc! {"_id": object_id}
     } else {
-        doc!{"_id": oid}
+        doc! {"_id": oid}
     }
 }
 
 pub fn get_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> WalletResult<T>
-    where T: Queryable<'de>
+where
+    T: Queryable<'de>,
 {
-    match wallet.collection(T::collection_name()).find_one(Some(filter_from_oid(&oid)), None) {
-        Ok(doc) => doc.map_or(
-            Err(BackendError::NotFound),
-            |doc| T::from_doc(doc)
-        ),
-        Err(e) => Err(dang!(Database, e))
+    match wallet
+        .collection(T::collection_name())
+        .find_one(Some(filter_from_oid(&oid)), None)
+    {
+        Ok(doc) => doc.map_or(Err(BackendError::NotFound), |doc| T::from_doc(doc)),
+        Err(e) => Err(dang!(Database, e)),
     }
 }
 
 pub fn insert_one<'de, T>(wallet: &mongodb::db::Database, obj: T) -> WalletResult<T>
-    where T: Queryable<'de>
+where
+    T: Queryable<'de>,
 {
     let mut doc = T::to_doc(&obj)?;
 
@@ -132,34 +144,44 @@ pub fn insert_one<'de, T>(wallet: &mongodb::db::Database, obj: T) -> WalletResul
     // so ignore if any comes along with the request.
     doc.remove("_id");
 
-    match wallet.collection(T::collection_name()).insert_one(doc, None) {
+    match wallet
+        .collection(T::collection_name())
+        .insert_one(doc, None)
+    {
         Ok(result) => get_one(wallet, objectid_to_string(result.inserted_id)?),
-        Err(e) => Err(dang!(Database, e))
+        Err(e) => Err(dang!(Database, e)),
     }
 }
 
 pub fn update_one<'de, T>(wallet: &mongodb::db::Database, oid: String, obj: T) -> WalletResult<T>
-    where T: Queryable<'de>
+where
+    T: Queryable<'de>,
 {
     let mut doc = T::to_doc(&obj)?;
 
     // $set doesn't seem to like getting data with _id, so we remove it.
     doc.remove("_id");
 
-    match wallet.collection(T::collection_name())
-    .update_one(filter_from_oid(&oid), doc!{"$set": doc}, None) {
+    match wallet.collection(T::collection_name()).update_one(
+        filter_from_oid(&oid),
+        doc! {"$set": doc},
+        None,
+    ) {
         Ok(_) => get_one(wallet, oid),
-        Err(e) => Err(dang!(Database, e))
+        Err(e) => Err(dang!(Database, e)),
     }
 }
 
 pub fn delete_one<'de, T>(wallet: &mongodb::db::Database, oid: String) -> WalletResult<T>
-    where T: Queryable<'de>
+where
+    T: Queryable<'de>,
 {
     let result = get_one::<T>(wallet, oid.clone()).map(|results| results)?;
-    match wallet.collection(T::collection_name())
-    .delete_one(filter_from_oid(&oid), None) {
+    match wallet
+        .collection(T::collection_name())
+        .delete_one(filter_from_oid(&oid), None)
+    {
         Ok(_) => Ok(result),
-        Err(e) => Err(dang!(Database, e))
+        Err(e) => Err(dang!(Database, e)),
     }
 }

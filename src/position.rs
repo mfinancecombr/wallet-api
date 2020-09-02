@@ -1,21 +1,20 @@
-use std::cmp::PartialEq;
-use std::sync::Mutex;
-use chrono::{DateTime, Date, Datelike, Duration, Local, TimeZone, Utc, Weekday};
-use log::{info, warn, debug};
-use mongodb::{Bson, bson, doc};
+use chrono::{Date, DateTime, Datelike, Duration, Local, TimeZone, Utc, Weekday};
+use log::{debug, info, warn};
 use mongodb::coll::options::FindOptions;
 use mongodb::db::ThreadedDatabase;
+use mongodb::{bson, doc, Bson};
 use rayon::prelude::*;
-use rocket_okapi::{JsonSchema};
-use serde::{Serialize, Deserialize};
-use yahoo_finance::{history};
+use rocket_okapi::JsonSchema;
+use serde::{Deserialize, Serialize};
+use std::cmp::PartialEq;
+use std::sync::Mutex;
+use yahoo_finance::history;
 
 use crate::error::*;
 use crate::historical::AssetDay;
-use crate::operation::{BaseOperation, OperationKind, get_distinct_symbols};
+use crate::operation::{get_distinct_symbols, BaseOperation, OperationKind};
 use crate::scheduling::LockMap;
 use crate::walletdb::*;
-
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct Position {
@@ -47,7 +46,9 @@ impl Position {
 }
 
 impl<'de> Queryable<'de> for Position {
-    fn collection_name() -> &'static str { "positions" }
+    fn collection_name() -> &'static str {
+        "positions"
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
@@ -59,12 +60,14 @@ pub struct Sale {
 }
 
 fn get_safely<'de, T>(doc: &bson::ordered::OrderedDocument, key: &str) -> WalletResult<T>
-    where T: Deserialize<'de>
+where
+    T: Deserialize<'de>,
 {
     if let Some(value) = doc.get(key) {
         bson::from_bson::<T>(value.clone()).map_err(|e| dang!(Bson, e))
     } else {
-        Err(dang!(Database,
+        Err(dang!(
+            Database,
             format!("field `{}` not found on document", key)
         ))
     }
@@ -72,13 +75,16 @@ fn get_safely<'de, T>(doc: &bson::ordered::OrderedDocument, key: &str) -> Wallet
 
 #[tokio::main]
 async fn current_price_for_symbol(symbol: String, date_to: DateTime<Local>) -> f64 {
-    let ysymbol= format!("{}.SA", &symbol);
+    let ysymbol = format!("{}.SA", &symbol);
     let date_from = date_to.date().and_hms(0, 0, 0);
     let bar = history::retrieve_range(
         &ysymbol,
         DateTime::<Utc>::from(date_from),
         Some(DateTime::<Utc>::from(date_to)),
-    ).await.ok().and_then(|mut bar| bar.pop());
+    )
+    .await
+    .ok()
+    .and_then(|mut bar| bar.pop());
 
     if let Some(bar) = bar {
         bar.close
@@ -107,7 +113,7 @@ fn find_all_fridays_between(from: DateTime<Local>, to: DateTime<Local>) -> Vec<D
 #[tokio::main]
 async fn do_calculate_for_symbol(
     db: &mongodb::db::Database,
-    symbol: String
+    symbol: String,
 ) -> WalletResult<Position> {
     let collection = db.collection(BaseOperation::collection_name());
 
@@ -119,9 +125,10 @@ async fn do_calculate_for_symbol(
         .map(|pos| {
             date_from = pos.time.with_timezone(&Utc);
             pos
-        }).unwrap_or(Position::new(&symbol));
+        })
+        .unwrap_or(Position::new(&symbol));
 
-    let filter = doc!{
+    let filter = doc! {
         "$and": [
             { "symbol": &symbol },
             {
@@ -138,11 +145,10 @@ async fn do_calculate_for_symbol(
         ]
     };
 
-    let options = Some(FindOptions::new())
-        .map(|mut options| {
-            options.sort = Some(doc! { "time": 1 });
-            options
-        });
+    let options = Some(FindOptions::new()).map(|mut options| {
+        options.sort = Some(doc! { "time": 1 });
+        options
+    });
 
     let cursor = match collection.find(Some(filter), options) {
         Ok(cursor) => cursor,
@@ -154,8 +160,7 @@ async fn do_calculate_for_symbol(
     let mut snapshots = Vec::<Position>::new();
     for document in cursor {
         if let Ok(document) = document {
-            position.time = get_safely::<DateTime<Utc>>(&document, "time")?
-                .with_timezone(&Local);
+            position.time = get_safely::<DateTime<Utc>>(&document, "time")?.with_timezone(&Local);
 
             let quantity = get_safely::<i64>(&document, "quantity")?;
             let kind = get_safely::<OperationKind>(&document, "type")?;
@@ -164,7 +169,7 @@ async fn do_calculate_for_symbol(
                     let price = get_safely::<f64>(&document, "price")?;
                     position.cost_basis += price * quantity as f64;
                     position.quantity += quantity;
-                },
+                }
                 OperationKind::Sale => {
                     /* When selling we need to use the average price at the moment
                      * of the sale for the average calculation to work. We may
@@ -184,7 +189,7 @@ async fn do_calculate_for_symbol(
                         cost_price: cost_price,
                         sell_price: sell_price,
                     })
-                },
+                }
             }
 
             if position.quantity != 0 && position.cost_basis != 0.0 {
@@ -208,52 +213,42 @@ async fn do_calculate_for_symbol(
 }
 
 impl Position {
-    pub fn last(
-        db: &mongodb::db::Database,
-        symbol: &str,
-    ) -> Option<Self> {
+    pub fn last(db: &mongodb::db::Database, symbol: &str) -> Option<Self> {
         let collection = db.collection(Position::collection_name());
 
-        let filter = doc!{ "symbol": symbol.to_string() };
+        let filter = doc! { "symbol": symbol.to_string() };
 
-        let options = Some(FindOptions::new())
-            .map(|mut options| {
-                options.sort = Some(doc! { "time": -1 });
-                options
-            });
+        let options = Some(FindOptions::new()).map(|mut options| {
+            options.sort = Some(doc! { "time": -1 });
+            options
+        });
 
         if let Ok(doc) = collection.find_one(Some(filter), options) {
-            doc.map(|doc| {
-                bson::from_bson(Bson::Document(doc)).ok()
-            }).unwrap_or(None)
+            doc.map(|doc| bson::from_bson(Bson::Document(doc)).ok())
+                .unwrap_or(None)
         } else {
             None
         }
-
     }
 
     pub fn calculate_for_symbol(
         db: &mongodb::db::Database,
         symbol: &str,
-    ) -> WalletResult<Position>
-    {
+    ) -> WalletResult<Position> {
         // Ensure we do not try to calculate for the same symbol more than once at a time.
         let _guard = LockMap::lock(BaseOperation::collection_name(), symbol);
 
         // Fire a background thread to get the current price.
         let ysymbol = symbol.to_string();
         let current_price = std::thread::spawn(move || {
-            current_price_for_symbol(
-                ysymbol,
-                Local::today().and_hms(23, 59, 59)
-            )
+            current_price_for_symbol(ysymbol, Local::today().and_hms(23, 59, 59))
         });
 
         let db = db.clone();
         let dsymbol = symbol.to_string();
-        let mut position = std::thread::spawn(move || {
-            do_calculate_for_symbol(&db, dsymbol)
-        }).join().unwrap()?;
+        let mut position = std::thread::spawn(move || do_calculate_for_symbol(&db, dsymbol))
+            .join()
+            .unwrap()?;
 
         let current_price = current_price.join().unwrap();
         position.current_price = current_price;
@@ -266,34 +261,40 @@ impl Position {
         let positions = Mutex::new(Vec::<Position>::new());
 
         let symbols = get_distinct_symbols(db)?;
-        symbols.into_par_iter()
+        symbols
+            .into_par_iter()
             .try_for_each::<_, WalletResult<_>>(|symbol| {
                 let position = Position::calculate_for_symbol(db, &symbol)?;
                 positions.lock().unwrap().push(position);
                 Ok(())
-            }
-        )?;
+            })?;
 
         Ok(positions.into_inner().unwrap())
     }
 
-    pub fn save_snapshots(db: &mongodb::db::Database, symbol: &str, mut snapshots: Vec<Position>) -> WalletResult<()> {
+    pub fn save_snapshots(
+        db: &mongodb::db::Database,
+        symbol: &str,
+        mut snapshots: Vec<Position>,
+    ) -> WalletResult<()> {
         info!("[{}] saving Position snapshots", symbol);
 
         // Ensure we do not try to calculate for the same symbol more than once at a time.
         let _guard = LockMap::lock(Position::collection_name(), symbol);
 
         let historical = db.collection("historical");
-        let find_options = Some(FindOptions::new())
-            .map(|mut options| {
-                options.sort = Some(doc! { "time": -1 });
-                options
-            });
+        let find_options = Some(FindOptions::new()).map(|mut options| {
+            options.sort = Some(doc! { "time": -1 });
+            options
+        });
 
         let mut previous_date: Option<DateTime<Local>> = None;
         for position in &mut snapshots {
             if let Some(previous_date) = previous_date {
-                info!("[{}] generating snapshots for range {:?} -> {:?}", symbol, previous_date, position.time);
+                info!(
+                    "[{}] generating snapshots for range {:?} -> {:?}",
+                    symbol, previous_date, position.time
+                );
                 for friday in find_all_fridays_between(previous_date, position.time) {
                     // We search for historical prices over a week to make sure we get
                     // data even through weekends and holidays.
@@ -310,7 +311,8 @@ impl Position {
                         ]
                     };
 
-                    let document = historical.find_one(Some(filter), find_options.clone())
+                    let document = historical
+                        .find_one(Some(filter), find_options.clone())
                         .map_err(|e| dang!(Database, e))?;
 
                     if let Some(document) = document {
@@ -320,11 +322,15 @@ impl Position {
                         position.time = asset_day.time.with_timezone(&Local);
                         position.current_price = asset_day.close;
                     } else {
-                        warn!("failed to find historical data for {} on {}", symbol, friday);
+                        warn!(
+                            "failed to find historical data for {} on {}",
+                            symbol, friday
+                        );
                         position.time = friday.with_timezone(&Local).and_hms(12, 0, 0);
                     }
 
-                    position.gain = position.current_price * position.quantity as f64 - position.cost_basis;
+                    position.gain =
+                        position.current_price * position.quantity as f64 - position.cost_basis;
 
                     debug!("[{}] inserting snapshot {:?}", symbol, position);
                     insert_one(&db, position.clone())?;
@@ -347,12 +353,16 @@ mod tests {
     use crate::operation::{AssetKind, OperationKind};
     use crate::stock::StockOperation;
 
-
     #[test]
     fn position_calculation() {
         let db = WalletDB::get_connection();
 
-        assert!(db.collection(BaseOperation::collection_name()).delete_many(doc!{}, None).is_ok(), true);
+        assert!(
+            db.collection(BaseOperation::collection_name())
+                .delete_many(doc! {}, None)
+                .is_ok(),
+            true
+        );
 
         let mut stock = StockOperation {
             asset_kind: AssetKind::Stock,
@@ -366,7 +376,7 @@ mod tests {
                 price: 10.0,
                 quantity: 100,
                 fees: 0.0,
-            }
+            },
         };
 
         let mut sales = Vec::<Sale>::new();

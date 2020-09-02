@@ -1,16 +1,16 @@
-use std::vec;
 use rocket_contrib::json::Json;
 use rocket_okapi::{openapi, JsonSchema};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{WalletResult};
-use crate::operation::{BaseOperation, AssetKind};
+use crate::error::WalletResult;
+use crate::operation::{AssetKind, BaseOperation};
 use crate::position::Position;
 use crate::rest::*;
 use crate::walletdb::*;
 
-
-fn asset_kind() -> AssetKind { AssetKind::Stock }
+fn asset_kind() -> AssetKind {
+    AssetKind::Stock
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct StockOperation {
@@ -22,7 +22,9 @@ pub struct StockOperation {
 }
 
 impl<'de> Queryable<'de> for StockOperation {
-    fn collection_name() -> &'static str { "operations" }
+    fn collection_name() -> &'static str {
+        "operations"
+    }
 }
 
 /// # Add a stock operation
@@ -30,7 +32,10 @@ impl<'de> Queryable<'de> for StockOperation {
 /// Adds a new stock operation
 #[openapi]
 #[post("/stocks/operations", data = "<operation>")]
-pub fn add_stock_operation(db: WalletDB, operation: Json<StockOperation>) -> WalletResult<Json<StockOperation>> {
+pub fn add_stock_operation(
+    db: WalletDB,
+    operation: Json<StockOperation>,
+) -> WalletResult<Json<StockOperation>> {
     api_add(db, operation)
 }
 
@@ -57,7 +62,11 @@ pub fn get_stock_operation_by_oid(db: WalletDB, oid: String) -> WalletResult<Jso
 /// Update a specific stock operation
 #[openapi]
 #[put("/stocks/operations/<oid>", data = "<operation>")]
-pub fn update_stock_operation_by_oid(db: WalletDB, oid: String, operation: Json<StockOperation>) -> WalletResult<Json<StockOperation>> {
+pub fn update_stock_operation_by_oid(
+    db: WalletDB,
+    oid: String,
+    operation: Json<StockOperation>,
+) -> WalletResult<Json<StockOperation>> {
     api_update::<StockOperation>(db, oid, operation)
 }
 
@@ -66,7 +75,10 @@ pub fn update_stock_operation_by_oid(db: WalletDB, oid: String, operation: Json<
 /// Delete a specific stock operation
 #[openapi]
 #[delete("/stocks/operations/<oid>")]
-pub fn delete_stock_operation_by_oid(db: WalletDB, oid: String) -> WalletResult<Json<StockOperation>> {
+pub fn delete_stock_operation_by_oid(
+    db: WalletDB,
+    oid: String,
+) -> WalletResult<Json<StockOperation>> {
     api_delete::<StockOperation>(db, oid)
 }
 

@@ -1,12 +1,10 @@
-use std::vec;
 use rocket_contrib::json::Json;
 use rocket_okapi::{openapi, JsonSchema};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{WalletResult};
+use crate::error::WalletResult;
 use crate::rest::*;
 use crate::walletdb::*;
-
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Broker {
@@ -17,7 +15,9 @@ pub struct Broker {
 }
 
 impl<'de> Queryable<'de> for Broker {
-    fn collection_name() -> &'static str { "brokers" }
+    fn collection_name() -> &'static str {
+        "brokers"
+    }
 }
 
 /// # Add a broker
@@ -52,7 +52,11 @@ pub fn get_broker_by_oid(db: WalletDB, oid: String) -> WalletResult<Json<Broker>
 /// Update a specific broker
 #[openapi]
 #[put("/brokers/<oid>", data = "<broker>")]
-pub fn update_broker_by_oid(db: WalletDB, oid: String, broker: Json<Broker>) -> WalletResult<Json<Broker>> {
+pub fn update_broker_by_oid(
+    db: WalletDB,
+    oid: String,
+    broker: Json<Broker>,
+) -> WalletResult<Json<Broker>> {
     api_update::<Broker>(db, oid, broker)
 }
 

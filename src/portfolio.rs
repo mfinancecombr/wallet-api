@@ -1,10 +1,9 @@
 use rocket_contrib::json::Json;
-use rocket_okapi::{openapi};
+use rocket_okapi::openapi;
 
-use crate::error::{WalletResult};
+use crate::error::WalletResult;
 use crate::position::Position;
 use crate::walletdb::WalletDB;
-
 
 #[openapi]
 #[post("/portfolio/position")]

@@ -1,25 +1,24 @@
-use std::fmt::{Debug};
-use chrono::{Local, DateTime};
+use chrono::{DateTime, Local};
 use mongodb::db::ThreadedDatabase;
-use rocket_okapi::{JsonSchema};
+use rocket_okapi::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 
 use crate::error::{BackendError, WalletResult};
 use crate::walletdb::Queryable;
 
-
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all="lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum AssetKind {
     Stock,
-    TesouroDireto
+    TesouroDireto,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all="lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum OperationKind {
     Purchase,
-    Sale
+    Sale,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -38,7 +37,7 @@ pub struct BaseOperation {
     #[serde(default = "Local::now")]
     pub time: DateTime<Local>,
 
-    #[serde(rename="type")]
+    #[serde(rename = "type")]
     pub kind: OperationKind,
 
     #[serde(default = "default_broker")]
@@ -49,7 +48,9 @@ pub struct BaseOperation {
 }
 
 impl<'de> Queryable<'de> for BaseOperation {
-    fn collection_name() -> &'static str { "operations" }
+    fn collection_name() -> &'static str {
+        "operations"
+    }
 }
 
 fn default_broker() -> String {
@@ -63,12 +64,16 @@ fn default_portfolio() -> String {
 pub fn get_distinct_symbols(wallet: &mongodb::db::Database) -> WalletResult<Vec<String>> {
     let collection = wallet.collection("operations");
 
-    let symbols = collection.distinct("symbol", None, None)
+    let symbols = collection
+        .distinct("symbol", None, None)
         .map_err(|e| dang!(Database, e))?;
 
-    symbols.iter().map(|s|
-        s.as_str()
-            .ok_or(dang!(Bson, "Failure converting string (symbol)"))
-            .map(|s| s.to_string())
-    ).collect::<WalletResult<Vec<String>>>()
+    symbols
+        .iter()
+        .map(|s| {
+            s.as_str()
+                .ok_or(dang!(Bson, "Failure converting string (symbol)"))
+                .map(|s| s.to_string())
+        })
+        .collect::<WalletResult<Vec<String>>>()
 }

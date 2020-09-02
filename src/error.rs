@@ -1,12 +1,11 @@
 use okapi::openapi3::Responses;
-use rocket::{Request, Response};
 use rocket::http::Status;
 use rocket::response::Responder;
+use rocket::{Request, Response};
 use rocket_okapi::gen::OpenApiGenerator;
 use rocket_okapi::response::OpenApiResponder;
 use rocket_okapi::util::add_schema_response;
 use std::io::Cursor;
-
 
 pub type WalletResult<T> = Result<T, BackendError>;
 
@@ -15,42 +14,42 @@ pub enum BackendError {
     Bson(String),
     Database(String),
     NotFound,
-    Yahoo(String)
+    Yahoo(String),
 }
 
 #[macro_export]
 macro_rules! dang {
     ($kind:ident, $original_err:expr) => {
         BackendError::$kind(format!("{:?}", $original_err))
-    }
+    };
 }
 
 impl Responder<'static> for BackendError {
     fn respond_to(self, _: &Request) -> Result<Response<'static>, Status> {
         let body;
         let status = match self {
-              BackendError::Bson(msg) => {
-              body = msg.clone();
-              Status::new(500, "Bson")
-          },
-          BackendError::Database(msg) => {
-              body = msg.clone();
-              Status::new(500, "Database")
-          },
-          BackendError::NotFound => {
-              body = String::new();
-              Status::NotFound
-          },
-          BackendError::Yahoo(msg) => {
-              body = msg.clone();
-              Status::new(500, "Yahoo")
-          }
+            BackendError::Bson(msg) => {
+                body = msg.clone();
+                Status::new(500, "Bson")
+            }
+            BackendError::Database(msg) => {
+                body = msg.clone();
+                Status::new(500, "Database")
+            }
+            BackendError::NotFound => {
+                body = String::new();
+                Status::NotFound
+            }
+            BackendError::Yahoo(msg) => {
+                body = msg.clone();
+                Status::new(500, "Yahoo")
+            }
         };
         Response::build()
             .status(status)
             .sized_body(Cursor::new(body))
             .ok()
-        }
+    }
 }
 
 impl OpenApiResponder<'static> for BackendError {

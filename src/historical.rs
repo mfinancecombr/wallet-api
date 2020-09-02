@@ -1,9 +1,9 @@
 use chrono::{DateTime, Duration, Local, NaiveDateTime, TimeZone, Utc};
 use mongodb::coll::options::FindOptions;
 use mongodb::db::ThreadedDatabase;
-use mongodb::{Bson, bson, doc};
+use mongodb::{bson, doc, Bson};
 use rayon::prelude::*;
-use rocket_okapi::{openapi};
+use rocket_okapi::openapi;
 use serde::{Deserialize, Serialize};
 use yahoo_finance::{history, Bar};
 
@@ -11,7 +11,6 @@ use crate::error::{BackendError, WalletResult};
 use crate::operation::get_distinct_symbols;
 use crate::scheduling::LockMap;
 use crate::walletdb::{Queryable, WalletDB};
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AssetDay {
@@ -25,19 +24,24 @@ pub struct AssetDay {
 }
 
 impl<'de> Queryable<'de> for AssetDay {
-    fn collection_name() -> &'static str { "historical" }
+    fn collection_name() -> &'static str {
+        "historical"
+    }
 }
 
 impl From<Bar> for AssetDay {
     fn from(bar: Bar) -> AssetDay {
         AssetDay {
             symbol: String::new(),
-            time: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp((bar.timestamp / 1000) as i64, 0), Utc),
+            time: DateTime::<Utc>::from_utc(
+                NaiveDateTime::from_timestamp((bar.timestamp / 1000) as i64, 0),
+                Utc,
+            ),
             open: bar.open,
             high: bar.high,
             low: bar.low,
             close: bar.close,
-            volume: bar.volume.unwrap_or(0) as i64
+            volume: bar.volume.unwrap_or(0) as i64,
         }
     }
 }
@@ -61,18 +65,18 @@ pub fn refresh_historical_for_symbol(db: WalletDB, symbol: String) -> WalletResu
     do_refresh_for_symbol(&*db, &symbol)
 }
 
-pub struct Historical { }
+pub struct Historical {}
 
 impl Historical {
     pub fn refresh_all(wallet: &mongodb::db::Database) -> WalletResult<()> {
         let symbols = get_distinct_symbols(wallet)?;
 
-        symbols.into_par_iter()
+        symbols
+            .into_par_iter()
             .try_for_each::<_, WalletResult<_>>(|symbol| {
                 do_refresh_for_symbol(wallet, &symbol)?;
                 Ok(())
-            }
-        )?;
+            })?;
 
         Ok(())
     }
@@ -89,8 +93,10 @@ async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> 
     // already have downloaded some historical data, and we don't want to
     // lose any of the earlier ones when the API moves its availability window.
     let mut options = FindOptions::new();
-    options.sort = Some(doc!{ "time": -1 });
-    wallet.collection("historical").find_one(Some(doc!{ "symbol": symbol }), Some(options))
+    options.sort = Some(doc! { "time": -1 });
+    wallet
+        .collection("historical")
+        .find_one(Some(doc! { "symbol": symbol }), Some(options))
         .map(|document| {
             if let Some(document) = document {
                 let asset_day: Result<AssetDay, _> = bson::from_bson(Bson::Document(document));
@@ -101,21 +107,17 @@ async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> 
                     since = asset_day.time.date().and_hms(0, 0, 0) + Duration::days(1);
                 }
             }
-        }).ok();
-
+        })
+        .ok();
 
     // Limit the range to yesterday, so we don't keep adding several times for
     // today in case we get called multiple times.
     let yesterday = DateTime::<Utc>::from(Local::today().and_hms(23, 59, 59) - Duration::days(1));
     if yesterday < since || yesterday.date() == since.date() {
-        return Ok(())
+        return Ok(());
     }
 
-    let data = history::retrieve_range(
-        &format!("{}.SA", symbol),
-        since,
-        Some(yesterday)
-    ).await;
+    let data = history::retrieve_range(&format!("{}.SA", symbol), since, Some(yesterday)).await;
 
     // HACK: yahoo-finance-rs will fail on queries for days with no data
     // and it doesn't provide a good way of understanding what kind of error
@@ -136,10 +138,10 @@ async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> 
         let mut asset_day = AssetDay::from(bar);
         asset_day.symbol = symbol.to_string();
 
-        let doc = bson::to_bson(&asset_day)
-            .map_err(|e| dang!(Bson, e))?;
+        let doc = bson::to_bson(&asset_day).map_err(|e| dang!(Bson, e))?;
 
-        let doc = doc.as_document()
+        let doc = doc
+            .as_document()
             .ok_or(dang!(Bson, "Could not convert to Document"))?;
 
         docs.push(doc.clone());
@@ -149,7 +151,9 @@ async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> 
         return Ok(());
     }
 
-    wallet.collection("historical").insert_many(docs, None)
+    wallet
+        .collection("historical")
+        .insert_many(docs, None)
         .map_err(|e| dang!(Database, e))
         .map(|_| ())
 }
@@ -160,14 +164,13 @@ mod tests {
 
     use super::*;
 
-
     #[test]
     fn repeated_refreshes() {
         let db = WalletDB::get_connection();
 
         let collection = db.collection("historical");
 
-        assert_eq!(collection.delete_many(doc!{}, None).is_ok(), true);
+        assert_eq!(collection.delete_many(doc! {}, None).is_ok(), true);
 
         // Downloading the data...
         let result = do_refresh_for_symbol(&db, "ANIM3");
@@ -178,10 +181,12 @@ mod tests {
         assert!(original_count > 0);
 
         // Delete the last year.
-        let filter = doc!{
+        let filter = doc! {
             "time": { "$gt": format!("{}-1-1", Local::today().year() - 1) }
         };
-        collection.delete_many(filter, None).expect("Delete many failed");
+        collection
+            .delete_many(filter, None)
+            .expect("Delete many failed");
 
         // Make sure we actually deleted something, but still have a bit.
         let count = collection.count(None, None).expect("Count failed");
