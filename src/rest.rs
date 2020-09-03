@@ -1,11 +1,14 @@
+use mongodb::coll::options::FindOptions;
+use mongodb::{bson, doc};
 use okapi::openapi3::Responses;
 use rocket::http::Status;
-use rocket::request::Request;
+use rocket::request::{Form, Request};
 use rocket::response::{Responder, Response};
 use rocket_contrib::json::Json;
 use rocket_okapi::gen::OpenApiGenerator;
 use rocket_okapi::response::OpenApiResponder;
 use rocket_okapi::util::add_schema_response;
+use serde::{Deserialize, Serialize};
 
 use crate::error::WalletResult;
 use crate::walletdb::*;
@@ -34,6 +37,14 @@ where
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default, JsonSchema, FromForm)]
+pub struct ListingOptions {
+    _start: Option<i64>,
+    _end: Option<i64>,
+    _order: Option<String>,
+    _sort: Option<String>,
+}
+
 pub fn api_add<'de, T>(db: WalletDB, operation: Json<T>) -> WalletResult<Json<T>>
 where
     T: Queryable<'de>,
@@ -41,14 +52,37 @@ where
     insert_one::<T>(&*db, operation.into_inner()).map(Json)
 }
 
-pub fn api_get<'de, T>(db: WalletDB) -> WalletResult<Rest<Json<Vec<T>>>>
+pub fn api_get<'de, T>(
+    db: WalletDB,
+    options: Option<Form<ListingOptions>>,
+) -> WalletResult<Rest<Json<Vec<T>>>>
 where
     T: Queryable<'de>,
 {
-    get::<T>(&*db).map(|results| {
-        let count = results.len();
-        Rest(Json(results), count)
-    })
+    let mut find_options = FindOptions::new();
+    if let Some(options) = options {
+        let mut limit: Option<i64> = None;
+        if options._end.is_some() && options._start.is_some() {
+            limit = Some(options._end.unwrap() - options._start.unwrap());
+        }
+
+        find_options.skip = options._start;
+        find_options.limit = limit;
+        if let Some(sort) = &options._sort {
+            find_options.sort = Some(doc! {
+                sort: options._order.as_ref().map(|order| {
+                    if order == "DESC" {
+                        1
+                    } else {
+                        -1
+                    }
+                }).unwrap_or(1)
+            });
+        }
+    };
+
+    let count = get_count::<T>(&*db)?;
+    get::<T>(&*db, Some(find_options)).map(|results| Rest(Json(results), count as usize))
 }
 
 pub fn api_get_one<'de, T>(db: WalletDB, oid: String) -> WalletResult<Json<T>>

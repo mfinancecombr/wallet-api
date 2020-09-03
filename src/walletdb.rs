@@ -1,3 +1,4 @@
+use mongodb::coll::options::FindOptions;
 use mongodb::db::ThreadedDatabase;
 use mongodb::ThreadedClient;
 use mongodb::{bson, doc, Bson};
@@ -87,15 +88,28 @@ pub trait Queryable<'de>: Serialize + Deserialize<'de> + std::fmt::Debug {
     }
 }
 
-pub fn get<'de, T>(wallet: &mongodb::db::Database) -> WalletResult<Vec<T>>
+pub fn get<'de, T>(
+    wallet: &mongodb::db::Database,
+    options: Option<FindOptions>,
+) -> WalletResult<Vec<T>>
 where
     T: Queryable<'de>,
 {
-    let cursor = match wallet.collection(T::collection_name()).find(None, None) {
+    let cursor = match wallet.collection(T::collection_name()).find(None, options) {
         Ok(cursor) => cursor,
         Err(e) => return Err(dang!(Database, e)),
     };
     T::from_docs(cursor)
+}
+
+pub fn get_count<'de, T>(wallet: &mongodb::db::Database) -> WalletResult<i64>
+where
+    T: Queryable<'de>,
+{
+    wallet
+        .collection(T::collection_name())
+        .count(None, None)
+        .map_err(|e| dang!(Database, e))
 }
 
 fn string_to_objectid(oid: &str) -> Result<bson::oid::ObjectId, bson::oid::Error> {
