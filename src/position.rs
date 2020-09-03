@@ -8,10 +8,9 @@ use rocket_okapi::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::cmp::PartialEq;
 use std::sync::Mutex;
-use yahoo_finance::history;
 
 use crate::error::*;
-use crate::historical::AssetDay;
+use crate::historical::Historical;
 use crate::operation::{get_distinct_symbols, BaseOperation, OperationKind};
 use crate::scheduling::LockMap;
 use crate::walletdb::*;
@@ -70,26 +69,6 @@ where
             Database,
             format!("field `{}` not found on document", key)
         ))
-    }
-}
-
-#[tokio::main]
-async fn current_price_for_symbol(symbol: String, date_to: DateTime<Local>) -> f64 {
-    let ysymbol = format!("{}.SA", &symbol);
-    let date_from = date_to.date().and_hms(0, 0, 0);
-    let bar = history::retrieve_range(
-        &ysymbol,
-        DateTime::<Utc>::from(date_from),
-        Some(DateTime::<Utc>::from(date_to)),
-    )
-    .await
-    .ok()
-    .and_then(|mut bar| bar.pop());
-
-    if let Some(bar) = bar {
-        bar.close
-    } else {
-        f64::NAN
     }
 }
 
@@ -252,9 +231,8 @@ impl Position {
 
         // Fire a background thread to get the current price.
         let ysymbol = symbol.to_string();
-        let current_price = std::thread::spawn(move || {
-            current_price_for_symbol(ysymbol, Local::today().and_hms(23, 59, 59))
-        });
+        let current_price =
+            std::thread::spawn(move || Historical::current_price_for_symbol(ysymbol));
 
         let db = db.clone();
         let dsymbol = symbol.to_string();
@@ -291,12 +269,6 @@ impl Position {
     ) -> WalletResult<()> {
         info!("[{}] saving Position snapshots", symbol);
 
-        let historical = db.collection("historical");
-        let find_options = Some(FindOptions::new()).map(|mut options| {
-            options.sort = Some(doc! { "time": -1 });
-            options
-        });
-
         let mut previous_position: Option<Position> = None;
         for position in &mut references {
             if let Some(mut previous_position) = previous_position {
@@ -305,29 +277,8 @@ impl Position {
                     symbol, previous_position.time, position.time
                 );
                 for friday in find_all_fridays_between(previous_position.time, position.time) {
-                    // We search for historical prices over a week to make sure we get
-                    // data even through weekends and holidays.
-                    // FIXME: this version of the mongodb driver doesn't seem to like
-                    // DateTime<Utc> objects. Newer ones work, maybe bite the bullet here.
-                    let range_from = (friday - Duration::days(7)).and_hms(0, 0, 0).to_rfc3339();
-                    let range_to = friday.and_hms(23, 59, 59).to_rfc3339();
-
-                    let filter = doc! {
-                        "$and": [
-                            { "symbol": symbol.to_string() },
-                            { "time": { "$gte": range_from } },
-                            { "time": { "$lte": range_to } },
-                        ]
-                    };
-
-                    let document = historical
-                        .find_one(Some(filter), find_options.clone())
-                        .map_err(|e| dang!(Database, e))?;
-
-                    if let Some(document) = document {
-                        let asset_day: AssetDay = bson::from_bson(Bson::Document(document))
-                            .map_err(|e| dang!(Bson, e))?;
-
+                    let asset_day = Historical::get_for_day_with_fallback(db, symbol, friday);
+                    if let Ok(asset_day) = asset_day {
                         previous_position.time = asset_day.time.with_timezone(&Local);
                         previous_position.current_price = asset_day.close;
                     } else {
@@ -436,7 +387,7 @@ mod tests {
 
         let position = Position::calculate_for_symbol(&db, "FAKE4");
         assert_eq!(position.is_ok(), true);
-        let mut position = position.unwrap();
+        let position = position.unwrap();
 
         let same_position = Position::calculate_for_symbol(&db, "FAKE4");
         assert_eq!(same_position.is_ok(), true);
@@ -448,15 +399,11 @@ mod tests {
         assert_eq!(position.realized, same_position.realized);
         assert_eq!(position.sales, same_position.sales);
 
-        // FIXME: these values change dynamically, and return NaN with the fake ticker;
-        // figure out how to test.
-        position.current_price = 0.0;
-        position.gain = 0.0;
-
         // Manually check that the time is pretty close to now, since we will update our
         // reference below with what we got.
         assert!(Local::now() - position.time < Duration::seconds(10));
 
+        // NOTE: Our Historical mock for now just returns a static 9.0 price for all requests.
         assert_eq!(
             position,
             Position {
@@ -465,8 +412,8 @@ mod tests {
                 cost_basis: 1200.0,
                 quantity: 150,
                 time: position.time,
-                current_price: 0.0,
-                gain: 0.0,
+                current_price: 9.0,
+                gain: 150.0,
                 realized: 100.0,
                 sales,
             }
@@ -487,31 +434,31 @@ mod tests {
 
         assert_eq!(positions.len(), 14);
 
-        // FIXME: gain is borked (-500, -700). realized is full sale price,
-        // should be realized gain. Need historical prices. Which needs a mock.
+        // time, cost_basis, quantity, realized, gain
         let expected = vec![
-            ("2020-01-03", 1000.0, 100, 0.0),
-            ("2020-01-10", 1000.0, 100, 0.0),
-            ("2020-01-17", 1000.0, 100, 0.0),
-            ("2020-01-24", 1000.0, 100, 0.0),
-            ("2020-01-31", 1000.0, 100, 0.0),
-            ("2020-02-07", 500.0, 50, 100.0),
-            ("2020-02-14", 500.0, 50, 100.0),
-            ("2020-02-21", 500.0, 50, 100.0),
-            ("2020-02-28", 500.0, 50, 100.0),
-            ("2020-03-06", 700.0, 100, 100.0),
-            ("2020-03-13", 700.0, 100, 100.0),
-            ("2020-03-20", 700.0, 100, 100.0),
-            ("2020-03-27", 1200.0, 150, 100.0),
-            ("2020-04-03", 1200.0, 150, 100.0),
+            ("2020-01-03", 1000.0, 100, 0.0, -100.0),
+            ("2020-01-10", 1000.0, 100, 0.0, -100.0),
+            ("2020-01-17", 1000.0, 100, 0.0, -100.0),
+            ("2020-01-24", 1000.0, 100, 0.0, -100.0),
+            ("2020-01-31", 1000.0, 100, 0.0, -100.0),
+            ("2020-02-07", 500.0, 50, 100.0, -50.0),
+            ("2020-02-14", 500.0, 50, 100.0, -50.0),
+            ("2020-02-21", 500.0, 50, 100.0, -50.0),
+            ("2020-02-28", 500.0, 50, 100.0, -50.0),
+            ("2020-03-06", 700.0, 100, 100.0, 200.0),
+            ("2020-03-13", 700.0, 100, 100.0, 200.0),
+            ("2020-03-20", 700.0, 100, 100.0, 200.0),
+            ("2020-03-27", 1200.0, 150, 100.0, 150.0),
+            ("2020-04-03", 1200.0, 150, 100.0, 150.0),
         ];
 
         for (index, position) in positions.into_iter().enumerate() {
-            let (time, cost_basis, quantity, realized) = &expected[index];
+            let (time, cost_basis, quantity, realized, gain) = &expected[index];
             assert_eq!(*time, position.time.naive_local().date().to_string());
             assert_eq!(*cost_basis, position.cost_basis);
             assert_eq!(*quantity, position.quantity);
             assert_eq!(*realized, position.realized);
+            assert_eq!(*gain, position.gain);
         }
     }
 }
