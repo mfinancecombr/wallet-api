@@ -1,3 +1,4 @@
+use rocket::request::Form;
 use rocket_contrib::json::Json;
 use rocket_okapi::{openapi, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -43,9 +44,13 @@ pub fn add_stock_operation(
 ///
 /// Lists all stock operations
 #[openapi]
-#[get("/stocks/operations")]
-pub fn get_stock_operations(db: WalletDB) -> WalletResult<Rest<Json<Vec<StockOperation>>>> {
-    api_get::<StockOperation>(db)
+#[get("/stocks/operations?<options..>")]
+pub fn get_stock_operations(
+    db: WalletDB,
+    options: Option<Form<ListingOptions>>,
+) -> WalletResult<Rest<Json<Vec<StockOperation>>>> {
+    println!("options: {:?}", options);
+    api_get::<StockOperation>(db, options)
 }
 
 /// # Get stock operation
