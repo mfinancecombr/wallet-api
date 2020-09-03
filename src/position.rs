@@ -95,12 +95,12 @@ async fn current_price_for_symbol(symbol: String, date_to: DateTime<Local>) -> f
 
 fn find_all_fridays_between(from: DateTime<Local>, to: DateTime<Local>) -> Vec<Date<Utc>> {
     let mut fridays = Vec::<Date<Utc>>::new();
-    let mut date = DateTime::<Utc>::from(from).date();
-    let to = DateTime::<Utc>::from(to).date();
+    let mut date = from.date();
+    let to = to.date();
 
     while date < to {
         if date.weekday() == Weekday::Fri {
-            fridays.push(date);
+            fridays.push(date.with_timezone(&Utc));
             date = date + Duration::days(7);
         } else {
             date = date + Duration::days(1);
@@ -115,6 +115,11 @@ async fn do_calculate_for_symbol(
     db: &mongodb::db::Database,
     symbol: String,
 ) -> WalletResult<Position> {
+    // Ensure we do not try to calculate for the same symbol more than once at a time.
+    // Create it here so it is locked even before the thread gets to run, to avoid
+    // races with callers of this function or multiple calls of this function.
+    let guard = LockMap::lock(Position::collection_name(), &symbol);
+
     let collection = db.collection(BaseOperation::collection_name());
 
     let mut date_from = Utc.timestamp(61, 0);
@@ -157,7 +162,7 @@ async fn do_calculate_for_symbol(
         }
     };
 
-    let mut snapshots = Vec::<Position>::new();
+    let mut references = Vec::<Position>::new();
     for document in cursor {
         if let Ok(document) = document {
             position.time = get_safely::<DateTime<Utc>>(&document, "time")?.with_timezone(&Local);
@@ -181,7 +186,8 @@ async fn do_calculate_for_symbol(
                     position.quantity -= quantity;
 
                     let sell_price = get_safely::<f64>(&document, "price")?;
-                    position.realized += quantity as f64 * sell_price;
+                    position.realized +=
+                        quantity as f64 * sell_price - quantity as f64 * cost_price;
 
                     position.sales.push(Sale {
                         time: position.time.with_timezone(&Local),
@@ -196,15 +202,21 @@ async fn do_calculate_for_symbol(
                 position.average_price = position.cost_basis / position.quantity as f64;
             }
 
-            // Note that save_snapshots disregards the first item on this vector.
-            snapshots.push(position.clone());
+            references.push(position.clone());
         }
     }
 
+    // Up to here we used the time for the last operation, but we have been asked
+    // for the "current" position. We also need to add that to references' last position,
+    // so that the snapshots will be calculated up to today.
+    position.time = Local::now();
+    references.push(position.clone());
+
     std::thread::spawn(move || {
         let db = WalletDB::get_connection();
-        Position::save_snapshots(&db, &symbol, snapshots).map_err(|e| {
-            warn!("failure saving snapshots: {:?}", e);
+        let _guard = guard;
+        Position::create_snapshots(&db, &symbol, references).map_err(|e| {
+            warn!("failure saving references: {:?}", e);
             e
         })
     });
@@ -272,15 +284,12 @@ impl Position {
         Ok(positions.into_inner().unwrap())
     }
 
-    pub fn save_snapshots(
+    pub fn create_snapshots(
         db: &mongodb::db::Database,
         symbol: &str,
-        mut snapshots: Vec<Position>,
+        mut references: Vec<Position>,
     ) -> WalletResult<()> {
         info!("[{}] saving Position snapshots", symbol);
-
-        // Ensure we do not try to calculate for the same symbol more than once at a time.
-        let _guard = LockMap::lock(Position::collection_name(), symbol);
 
         let historical = db.collection("historical");
         let find_options = Some(FindOptions::new()).map(|mut options| {
@@ -288,14 +297,14 @@ impl Position {
             options
         });
 
-        let mut previous_date: Option<DateTime<Local>> = None;
-        for position in &mut snapshots {
-            if let Some(previous_date) = previous_date {
+        let mut previous_position: Option<Position> = None;
+        for position in &mut references {
+            if let Some(mut previous_position) = previous_position {
                 info!(
                     "[{}] generating snapshots for range {:?} -> {:?}",
-                    symbol, previous_date, position.time
+                    symbol, previous_position.time, position.time
                 );
-                for friday in find_all_fridays_between(previous_date, position.time) {
+                for friday in find_all_fridays_between(previous_position.time, position.time) {
                     // We search for historical prices over a week to make sure we get
                     // data even through weekends and holidays.
                     // FIXME: this version of the mongodb driver doesn't seem to like
@@ -319,25 +328,26 @@ impl Position {
                         let asset_day: AssetDay = bson::from_bson(Bson::Document(document))
                             .map_err(|e| dang!(Bson, e))?;
 
-                        position.time = asset_day.time.with_timezone(&Local);
-                        position.current_price = asset_day.close;
+                        previous_position.time = asset_day.time.with_timezone(&Local);
+                        previous_position.current_price = asset_day.close;
                     } else {
                         warn!(
                             "failed to find historical data for {} on {}",
                             symbol, friday
                         );
-                        position.time = friday.with_timezone(&Local).and_hms(12, 0, 0);
+                        previous_position.time = friday.with_timezone(&Local).and_hms(12, 0, 0);
                     }
 
-                    position.gain =
-                        position.current_price * position.quantity as f64 - position.cost_basis;
+                    previous_position.gain = previous_position.current_price
+                        * previous_position.quantity as f64
+                        - previous_position.cost_basis;
 
-                    debug!("[{}] inserting snapshot {:?}", symbol, position);
-                    insert_one(&db, position.clone())?;
+                    debug!("[{}] inserting snapshot {:?}", symbol, previous_position);
+                    insert_one(&db, previous_position.clone())?;
                 }
             }
 
-            previous_date = Some(position.time);
+            previous_position = Some(position.clone());
         }
         info!("[{}] done saving Position snapshots", symbol);
 
@@ -364,6 +374,15 @@ mod tests {
             true
         );
 
+        assert!(
+            db.collection(Position::collection_name())
+                .delete_many(doc! {}, None)
+                .is_ok(),
+            true
+        );
+
+        let symbol = String::from("FAKE4");
+
         let mut stock = StockOperation {
             asset_kind: AssetKind::Stock,
             operation: BaseOperation {
@@ -371,8 +390,8 @@ mod tests {
                 kind: OperationKind::Purchase,
                 broker: String::from("FakeTestBroker"),
                 portfolio: String::from("FakeTestWallet"),
-                symbol: String::from("FAKE4"),
-                time: Local::now(),
+                symbol: symbol.clone(),
+                time: Local.ymd(2020, 1, 1).and_hms(12, 0, 0),
                 price: 10.0,
                 quantity: 100,
                 fees: 0.0,
@@ -386,52 +405,113 @@ mod tests {
         stock.operation.price = 12.0;
         stock.operation.quantity = 50;
         stock.operation.kind = OperationKind::Sale;
-        stock.operation.time = Local::now();
+        stock.operation.time = Local.ymd(2020, 2, 1).and_hms(12, 0, 0);
 
         sales.push(Sale {
             time: stock.operation.time,
-            quantity: 50,
+            quantity: stock.operation.quantity,
             cost_price: 10.0,
-            sell_price: 12.0,
+            sell_price: stock.operation.price,
         });
 
         assert!(insert_one(&db, stock.clone()).is_ok(), true);
 
         stock.operation.price = 4.0;
         stock.operation.kind = OperationKind::Purchase;
-        stock.operation.time = Local::now();
+        stock.operation.time = Local.ymd(2020, 3, 1).and_hms(12, 0, 0);
 
         assert!(insert_one(&db, stock.clone()).is_ok(), true);
 
+        // This is a Friday, so will test corner cases of the position snapshots.
+        stock.operation.price = 10.0;
+        stock.operation.kind = OperationKind::Purchase;
+        stock.operation.time = Local.ymd(2020, 3, 27).and_hms(12, 0, 0);
+
+        assert!(insert_one(&db, stock).is_ok(), true);
+
+        // Do a full update first, which should trigger calculation for our
+        // FAKE4. This means the specific call below should start from an
+        // existing reference.
+        Position::calculate_all(&db).expect("Something went wrong");
+
         let position = Position::calculate_for_symbol(&db, "FAKE4");
         assert_eq!(position.is_ok(), true);
+        let mut position = position.unwrap();
+
+        let same_position = Position::calculate_for_symbol(&db, "FAKE4");
+        assert_eq!(same_position.is_ok(), true);
+        let same_position = same_position.unwrap();
+
+        assert_eq!(position.cost_basis, same_position.cost_basis);
+        assert_eq!(position.quantity, same_position.quantity);
+        assert_eq!(position.average_price, same_position.average_price);
+        assert_eq!(position.realized, same_position.realized);
+        assert_eq!(position.sales, same_position.sales);
 
         // FIXME: these values change dynamically, and return NaN with the fake ticker;
         // figure out how to test.
-        let mut position = position.unwrap();
         position.current_price = 0.0;
         position.gain = 0.0;
+
+        // Manually check that the time is pretty close to now, since we will update our
+        // reference below with what we got.
+        assert!(Local::now() - position.time < Duration::seconds(10));
 
         assert_eq!(
             position,
             Position {
-                symbol: String::from("FAKE4"),
-                average_price: 7.0,
-                cost_basis: 700.0,
-                quantity: 100,
-                time: stock.operation.time,
+                symbol,
+                average_price: 8.0,
+                cost_basis: 1200.0,
+                quantity: 150,
+                time: position.time,
                 current_price: 0.0,
                 gain: 0.0,
-                realized: 600.0,
+                realized: 100.0,
                 sales,
             }
         );
-    }
 
-    #[test]
-    fn test_calculate_all() {
-        let db = WalletDB::get_connection();
+        let collection = db.collection(Position::collection_name());
 
-        Position::calculate_all(&db).expect("Something went wrong");
+        // Snapshots should go all the way to "today", so we select a small
+        // known sample to verify everything looks ok.
+        let filter = doc! {
+            "time": { "$lt": "2020-04-04" }
+        };
+
+        let positions = collection
+            .find(Some(filter), None)
+            .map(|cursor| Position::from_docs(cursor).expect("Failed to convert document"))
+            .expect("Failed to query positions collection");
+
+        assert_eq!(positions.len(), 14);
+
+        // FIXME: gain is borked (-500, -700). realized is full sale price,
+        // should be realized gain. Need historical prices. Which needs a mock.
+        let expected = vec![
+            ("2020-01-03", 1000.0, 100, 0.0),
+            ("2020-01-10", 1000.0, 100, 0.0),
+            ("2020-01-17", 1000.0, 100, 0.0),
+            ("2020-01-24", 1000.0, 100, 0.0),
+            ("2020-01-31", 1000.0, 100, 0.0),
+            ("2020-02-07", 500.0, 50, 100.0),
+            ("2020-02-14", 500.0, 50, 100.0),
+            ("2020-02-21", 500.0, 50, 100.0),
+            ("2020-02-28", 500.0, 50, 100.0),
+            ("2020-03-06", 700.0, 100, 100.0),
+            ("2020-03-13", 700.0, 100, 100.0),
+            ("2020-03-20", 700.0, 100, 100.0),
+            ("2020-03-27", 1200.0, 150, 100.0),
+            ("2020-04-03", 1200.0, 150, 100.0),
+        ];
+
+        for (index, position) in positions.into_iter().enumerate() {
+            let (time, cost_basis, quantity, realized) = &expected[index];
+            assert_eq!(*time, position.time.naive_local().date().to_string());
+            assert_eq!(*cost_basis, position.cost_basis);
+            assert_eq!(*quantity, position.quantity);
+            assert_eq!(*realized, position.realized);
+        }
     }
 }
