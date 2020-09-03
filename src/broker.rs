@@ -1,3 +1,4 @@
+use rocket::request::Form;
 use rocket_contrib::json::Json;
 use rocket_okapi::{openapi, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -33,9 +34,12 @@ pub fn add_broker(db: WalletDB, broker: Json<Broker>) -> WalletResult<Json<Broke
 ///
 /// Lists all brokers
 #[openapi]
-#[get("/brokers")]
-pub fn get_brokers(db: WalletDB) -> WalletResult<Rest<Json<Vec<Broker>>>> {
-    api_get::<Broker>(db)
+#[get("/brokers?<options..>")]
+pub fn get_brokers(
+    db: WalletDB,
+    options: Option<Form<ListingOptions>>,
+) -> WalletResult<Rest<Json<Vec<Broker>>>> {
+    api_get::<Broker>(db, options)
 }
 
 /// # Get broker
