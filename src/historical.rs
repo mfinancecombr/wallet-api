@@ -12,6 +12,12 @@ use crate::operation::get_distinct_symbols;
 use crate::scheduling::LockMap;
 use crate::walletdb::{Queryable, WalletDB};
 
+#[cfg(not(test))]
+use chrono::Date;
+
+#[cfg(test)]
+pub mod test;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AssetDay {
     pub symbol: String,
@@ -79,6 +85,69 @@ impl Historical {
             })?;
 
         Ok(())
+    }
+
+    #[cfg(not(test))]
+    #[tokio::main]
+    pub async fn current_price_for_symbol(symbol: String) -> f64 {
+        let ysymbol = format!("{}.SA", &symbol);
+        let date_to = Local::today().and_hms(23, 59, 59);
+        let date_from = date_to.date().and_hms(0, 0, 0);
+        let bar = history::retrieve_range(
+            &ysymbol,
+            DateTime::<Utc>::from(date_from),
+            Some(DateTime::<Utc>::from(date_to)),
+        )
+        .await
+        .ok()
+        .and_then(|mut bar| bar.pop());
+
+        if let Some(bar) = bar {
+            bar.close
+        } else {
+            f64::NAN
+        }
+    }
+
+    #[cfg(not(test))]
+    pub fn get_for_day_with_fallback(
+        wallet: &mongodb::db::Database,
+        symbol: &str,
+        date: Date<Utc>,
+    ) -> WalletResult<AssetDay> {
+        let historical = wallet.collection("historical");
+        let find_options = Some(FindOptions::new()).map(|mut options| {
+            options.sort = Some(doc! { "time": -1 });
+            options
+        });
+
+        // We search for historical prices over a week to make sure we get
+        // data even through weekends and holidays.
+        // FIXME: this version of the mongodb driver doesn't seem to like
+        // DateTime<Utc> objects. Newer ones work, maybe bite the bullet here.
+        let range_from = (date - Duration::days(7)).and_hms(0, 0, 0).to_rfc3339();
+        let range_to = date.and_hms(23, 59, 59).to_rfc3339();
+
+        let filter = doc! {
+            "$and": [
+                { "symbol": symbol.to_string() },
+                { "time": { "$gte": range_from } },
+                { "time": { "$lte": range_to } },
+            ]
+        };
+
+        let document = historical
+            .find_one(Some(filter), find_options)
+            .map_err(|e| dang!(Database, e))?;
+
+        if let Some(document) = document {
+            Ok(
+                bson::from_bson::<AssetDay>(Bson::Document(document))
+                    .map_err(|e| dang!(Bson, e))?,
+            )
+        } else {
+            Err(BackendError::NotFound)
+        }
     }
 }
 
