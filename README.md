@@ -30,7 +30,7 @@ curl \
   -X POST \
   -H 'Content-Type: application/json' \
   -d '{
-    "portfolio": "default", "symbol": "PETR4", "type": "purchase", "broker": "Clear",
+    "portfolios": ["default"], "symbol": "PETR4", "type": "purchase", "broker": "Clear",
     "quantity": 500, "price": 10, "time": "2020-04-24T00:00:00Z", "fees": 0
     }'
 ```
