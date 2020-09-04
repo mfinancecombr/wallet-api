@@ -43,7 +43,7 @@ pub struct BaseOperation {
     pub broker: String,
 
     #[serde(default = "default_portfolio")]
-    pub portfolio: String,
+    pub portfolios: Vec<String>,
 }
 
 impl Queryable for BaseOperation {
@@ -56,8 +56,8 @@ fn default_broker() -> String {
     "default".to_string()
 }
 
-fn default_portfolio() -> String {
-    "default".to_string()
+fn default_portfolio() -> Vec<String> {
+    vec!["default".to_string()]
 }
 
 pub fn get_distinct_symbols() -> WalletResult<Vec<String>> {

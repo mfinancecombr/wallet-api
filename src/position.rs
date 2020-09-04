@@ -325,7 +325,7 @@ mod tests {
                 id: None,
                 kind: OperationKind::Purchase,
                 broker: String::from("FakeTestBroker"),
-                portfolio: String::from("FakeTestWallet"),
+                portfolios: vec![String::from("FakeTestWallet")],
                 symbol: symbol.clone(),
                 time: Local.ymd(2020, 1, 1).and_hms(12, 0, 0),
                 price: 10.0,
