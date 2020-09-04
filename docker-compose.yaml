@@ -1,0 +1,9 @@
+version: '3'
+
+services:
+  wallet-api-mongo:
+    image: mongo:latest
+    volumes:
+      - ./datadir:/data/db
+    ports:
+      - 27017:27017
