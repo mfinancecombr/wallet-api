@@ -40,11 +40,12 @@ pub fn add_portfolio(portfolio: Json<Portfolio>) -> WalletResult<Json<Portfolio>
 ///
 /// Lists all portfolios
 #[openapi]
-#[get("/portfolios?<options..>")]
+#[get("/portfolios?<id>&<options..>")]
 pub fn get_portfolios(
+    id: Option<String>,
     options: Option<Form<ListingOptions>>,
 ) -> WalletResult<Rest<Json<Vec<Portfolio>>>> {
-    api_get::<Portfolio>(options)
+    api_get::<Portfolio>(id, options)
 }
 
 /// # Get portfolio

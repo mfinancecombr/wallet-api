@@ -120,12 +120,15 @@ pub trait Queryable: Serialize + DeserializeOwned + std::fmt::Debug {
     }
 }
 
-pub fn get<T>(options: Option<FindOptions>) -> WalletResult<Vec<T>>
+pub fn get<T>(filter: Option<Document>, options: Option<FindOptions>) -> WalletResult<Vec<T>>
 where
     T: Queryable,
 {
     let wallet = WalletDB::get_connection();
-    let cursor = match wallet.collection(T::collection_name()).find(None, options) {
+    let cursor = match wallet
+        .collection(T::collection_name())
+        .find(filter, options)
+    {
         Ok(cursor) => cursor,
         Err(e) => return Err(dang!(Database, e)),
     };
