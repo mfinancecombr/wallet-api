@@ -8,6 +8,7 @@ import {
   StockOperationEdit,
   StockOperationList,
 } from "./StockOperations";
+import { PortfolioList, PortfolioEdit, PortfolioCreate } from "./Portfolios";
 
 const dataProvider = jsonServerProvider("http://localhost:8000/api/v1");
 const App = () => (
@@ -23,6 +24,12 @@ const App = () => (
       list={StockOperationList}
       edit={StockOperationEdit}
       create={StockOperationCreate}
+    />
+    <Resource
+      name="portfolios"
+      list={PortfolioList}
+      edit={PortfolioEdit}
+      create={PortfolioCreate}
     />
   </Admin>
 );
