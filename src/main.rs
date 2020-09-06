@@ -39,19 +39,28 @@ fn main() {
         .mount(
             "/api/v1/",
             routes_with_openapi![
+                // Broker
                 add_broker,
                 get_brokers,
                 get_broker_by_oid,
                 update_broker_by_oid,
                 delete_broker_by_oid,
+                // Stocks
                 add_stock_operation,
                 get_stock_operations,
                 get_stock_operation_by_oid,
                 update_stock_operation_by_oid,
                 delete_stock_operation_by_oid,
                 get_stock_position_by_symbol,
+                // Historical
                 refresh_historicals,
                 refresh_historical_for_symbol,
+                // Portfolio
+                add_portfolio,
+                get_portfolios,
+                get_portfolio_by_oid,
+                update_portfolio_by_oid,
+                delete_portfolio_by_oid,
                 portfolio_position,
             ],
         )
