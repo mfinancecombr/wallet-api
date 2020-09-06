@@ -45,8 +45,7 @@ pub fn add_stock_operation(operation: Json<StockOperation>) -> WalletResult<Json
 pub fn get_stock_operations(
     options: Option<Form<ListingOptions>>,
 ) -> WalletResult<Rest<Json<Vec<StockOperation>>>> {
-    println!("options: {:?}", options);
-    api_get::<StockOperation>(options)
+    api_get::<StockOperation>(None, options)
 }
 
 /// # Get stock operation

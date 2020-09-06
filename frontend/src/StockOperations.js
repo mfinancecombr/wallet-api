@@ -1,16 +1,21 @@
 import * as React from "react";
 import {
-  Create,
-  Datagrid,
-  DateField,
-  Edit,
-  EditButton,
   List,
-  NumberInput,
-  SelectInput,
+  Datagrid,
+  Edit,
+  Create,
   SimpleForm,
+  ChipField,
+  DateField,
+  ReferenceArrayField,
+  SingleFieldList,
   TextField,
+  EditButton,
   TextInput,
+  SelectInput,
+  SelectArrayInput,
+  ReferenceArrayInput,
+  NumberInput,
 } from "react-admin";
 import { DateTimeInput } from "react-admin-date-inputs";
 import { required } from "react-admin";
@@ -24,7 +29,15 @@ export const StockOperationList = (props) => (
       <TextField source="fees" />
       <TextField source="type" />
       <TextField source="broker" />
-      <TextField source="portfolio" />
+      <ReferenceArrayField
+        label="Portfolios"
+        source="portfolios"
+        reference="portfolios"
+      >
+        <SingleFieldList>
+          <ChipField source="name" />
+        </SingleFieldList>
+      </ReferenceArrayField>
       <DateField showTime source="time" />
       <EditButton basePath="/stocks/operations" />
     </Datagrid>
@@ -47,7 +60,13 @@ export const StockOperationEdit = (props) => (
         ]}
       />
       <TextInput source="broker" />
-      <TextInput source="portfolio" />
+      <ReferenceArrayInput
+        label="Portfolios"
+        source="portfolios"
+        reference="portfolios"
+      >
+        <SelectArrayInput source="portfolios" />
+      </ReferenceArrayInput>
       <DateTimeInput source="time" />
     </SimpleForm>
   </Edit>
@@ -68,7 +87,13 @@ export const StockOperationCreate = (props) => (
         ]}
       />
       <TextInput source="broker" />
-      <TextInput source="portfolio" />
+      <ReferenceArrayInput
+        label="Portfolios"
+        source="portfolios"
+        reference="portfolios"
+      >
+        <SelectArrayInput source="portfolios" />
+      </ReferenceArrayInput>
       <DateTimeInput source="time" />
     </SimpleForm>
   </Create>

@@ -36,7 +36,7 @@ pub fn add_broker(broker: Json<Broker>) -> WalletResult<Json<Broker>> {
 #[openapi]
 #[get("/brokers?<options..>")]
 pub fn get_brokers(options: Option<Form<ListingOptions>>) -> WalletResult<Rest<Json<Vec<Broker>>>> {
-    api_get::<Broker>(options)
+    api_get::<Broker>(None, options)
 }
 
 /// # Get broker

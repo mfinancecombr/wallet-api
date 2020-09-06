@@ -1,4 +1,4 @@
-use mongodb::bson::doc;
+use mongodb::bson::{doc, oid, to_bson, Bson};
 use mongodb::options::FindOptions;
 use okapi::openapi3::Responses;
 use rocket::http::Status;
@@ -52,10 +52,26 @@ where
     insert_one::<T>(operation.into_inner()).map(Json)
 }
 
-pub fn api_get<T>(options: Option<Form<ListingOptions>>) -> WalletResult<Rest<Json<Vec<T>>>>
+pub fn api_get<T>(
+    id: Option<String>,
+    options: Option<Form<ListingOptions>>,
+) -> WalletResult<Rest<Json<Vec<T>>>>
 where
     T: Queryable,
 {
+    let filter = id.map(|id| {
+        // This is just string to Bson. It shouldn't really fail unless something went
+        // quite wrong, so we just panic if it fails to convert.
+        let ids_to_lookup = id
+            .split(',')
+            .map(|s| Bson::ObjectId(oid::ObjectId::with_string(s).unwrap()))
+            .collect::<Vec<Bson>>();
+
+        doc! {
+            "_id": { "$in": to_bson(&Bson::Array(ids_to_lookup)).unwrap() }
+        }
+    });
+
     let mut find_options: Option<FindOptions> = None;
     if let Some(options) = options {
         let skip = options._start;
@@ -98,7 +114,7 @@ where
     };
 
     let count = get_count::<T>()?;
-    get::<T>(find_options).map(|results| Rest(Json(results), count as usize))
+    get::<T>(filter, find_options).map(|results| Rest(Json(results), count as usize))
 }
 
 pub fn api_get_one<T>(oid: String) -> WalletResult<Json<T>>
