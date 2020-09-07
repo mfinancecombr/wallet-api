@@ -22,10 +22,11 @@ http://localhost:8000/swagger-ui/
 
 ## Examples:
 
-###  Adding stock operations:
+### Adding stock operations:
+
 ```curlrc
 curl \
-  http://localhost:8000/stocks/operations \
+  http://localhost:8000/api/v1/stocks/operations \
   -X POST \
   -H 'Content-Type: application/json' \
   -d '{
@@ -36,7 +37,7 @@ curl \
 
 ```curlrc
 curl \
-  http://localhost:8000/stocks/operations \
+  http://localhost:8000/api/v1/stocks/operations \
   -X POST \
   -H 'Content-Type: application/json' \
   -d '{
@@ -49,7 +50,7 @@ curl \
 
 ```curlrc
 curl \
-  http://localhost:8000/stocks/position/PETR4
+  http://localhost:8000/api/v1/stocks/position/PETR4
 ```
 
 [mfinance-wallet-api-go]: https://github.com/mfinancecombr/finance-wallet-api

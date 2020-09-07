@@ -9,7 +9,7 @@ import {
   StockOperationList,
 } from "./StockOperations";
 
-const dataProvider = jsonServerProvider("http://localhost:8000");
+const dataProvider = jsonServerProvider("http://localhost:8000/api/v1");
 const App = () => (
   <Admin dataProvider={dataProvider}>
     <Resource
