@@ -37,7 +37,7 @@ fn main() {
 
     rocket::ignite()
         .mount(
-            "/",
+            "/api/v1/",
             routes_with_openapi![
                 add_broker,
                 get_brokers,
