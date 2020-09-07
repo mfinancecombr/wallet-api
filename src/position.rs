@@ -308,6 +308,7 @@ impl Position {
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_relative_eq;
     use std::vec::Vec;
 
     use super::*;
@@ -393,10 +394,10 @@ mod tests {
         assert_eq!(same_position.is_ok(), true);
         let same_position = same_position.unwrap();
 
-        assert_eq!(position.cost_basis, same_position.cost_basis);
+        assert_relative_eq!(position.cost_basis, same_position.cost_basis,);
         assert_eq!(position.quantity, same_position.quantity);
-        assert_eq!(position.average_price, same_position.average_price);
-        assert_eq!(position.realized, same_position.realized);
+        assert_relative_eq!(position.average_price, same_position.average_price);
+        assert_relative_eq!(position.realized, same_position.realized);
         assert_eq!(position.sales, same_position.sales);
 
         // Manually check that the time is pretty close to now, since we will update our
@@ -455,10 +456,10 @@ mod tests {
         for (index, position) in positions.into_iter().enumerate() {
             let (time, cost_basis, quantity, realized, gain) = &expected[index];
             assert_eq!(*time, position.time.naive_local().date().to_string());
-            assert_eq!(*cost_basis, position.cost_basis);
+            assert_relative_eq!(*cost_basis, position.cost_basis);
             assert_eq!(*quantity, position.quantity);
-            assert_eq!(*realized, position.realized);
-            assert_eq!(*gain, position.gain);
+            assert_relative_eq!(*realized, position.realized);
+            assert_relative_eq!(*gain, position.gain);
         }
     }
 }

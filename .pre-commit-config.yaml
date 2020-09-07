@@ -1,20 +1,21 @@
 repos:
-  - repo: local
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v3.2.0
     hooks:
-      - id: trailing-whitespace-fixer
-        name: trailing-whitespace-fixer
-        entry: trailing-whitespace-fixer
-        language: system
+      - id: check-toml
+
+      - id: check-yaml
+
+      - id: trailing-whitespace
         types: [non-executable, file, text]
         exclude_types: [markdown]
 
       - id: end-of-file-fixer
-        name: end-of-file-fixer
-        entry: end-of-file-fixer
-        language: system
         types: [non-executable, file, text]
         exclude_types: [markdown]
 
+  - repo: local
+    hooks:
       - id: rustfmt
         name: cargo fmt
         entry: cargo fmt
