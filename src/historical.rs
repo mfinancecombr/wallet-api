@@ -207,6 +207,14 @@ async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> 
         let mut asset_day = AssetDay::from(bar);
         asset_day.symbol = symbol.to_string();
 
+        // HACK: yahoo-finance-rs will sometimes return one bar from the day
+        // before the one specified as the start of the range. We do this
+        // sanity check here to avoid that.
+        // See https://github.com/fbriden/yahoo-finance-rs/issues/25
+        if asset_day.time < since {
+            continue;
+        }
+
         let doc = bson::to_bson(&asset_day).map_err(|e| dang!(Bson, e))?;
 
         let doc = doc
