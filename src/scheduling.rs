@@ -7,7 +7,6 @@ use std::sync::Mutex;
 
 use crate::historical::Historical;
 use crate::position::Position;
-use crate::walletdb::WalletDB;
 
 pub struct LockMap(HashSet<(String, String)>);
 lazy_static! {
@@ -75,19 +74,17 @@ impl Fairing for Scheduler {
         }
     }
 
-    fn on_launch(&self, rocket: &Rocket) {
-        let db = WalletDB::get_one(&rocket).expect("Could not get DB connection");
-
+    fn on_launch(&self, _: &Rocket) {
         std::thread::spawn(move || {
             info!("=> Starting on-launch full refresh…");
 
-            if let Err(e) = Historical::refresh_all(&db) {
+            if let Err(e) = Historical::refresh_all() {
                 warn!("failed to pre-calculate historicals: {:?}", e);
             }
 
             info!("=> Done refreshing historicals…");
 
-            if let Err(e) = Position::calculate_all(&db) {
+            if let Err(e) = Position::calculate_all() {
                 warn!("failed to pre-calculate positions: {:?}", e);
             }
 

@@ -1,10 +1,10 @@
 use chrono::{Date, DateTime, Datelike, Duration, Local, TimeZone, Utc, Weekday};
 use log::{debug, info, warn};
-use mongodb::coll::options::FindOptions;
-use mongodb::db::ThreadedDatabase;
-use mongodb::{bson, doc, Bson};
+use mongodb::bson::{doc, from_bson, Bson, Document};
+use mongodb::options::{FindOneOptions, FindOptions};
 use rayon::prelude::*;
 use rocket_okapi::JsonSchema;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::cmp::PartialEq;
 use std::sync::Mutex;
@@ -44,7 +44,7 @@ impl Position {
     }
 }
 
-impl<'de> Queryable<'de> for Position {
+impl Queryable for Position {
     fn collection_name() -> &'static str {
         "positions"
     }
@@ -58,12 +58,12 @@ pub struct Sale {
     pub sell_price: f64,
 }
 
-fn get_safely<'de, T>(doc: &bson::ordered::OrderedDocument, key: &str) -> WalletResult<T>
+fn get_safely<T>(doc: &Document, key: &str) -> WalletResult<T>
 where
-    T: Deserialize<'de>,
+    T: DeserializeOwned,
 {
     if let Some(value) = doc.get(key) {
-        bson::from_bson::<T>(value.clone()).map_err(|e| dang!(Bson, e))
+        from_bson::<T>(value.clone()).map_err(|e| dang!(Bson, e))
     } else {
         Err(dang!(
             Database,
@@ -90,22 +90,20 @@ fn find_all_fridays_between(from: DateTime<Local>, to: DateTime<Local>) -> Vec<D
 }
 
 #[tokio::main]
-async fn do_calculate_for_symbol(
-    db: &mongodb::db::Database,
-    symbol: String,
-) -> WalletResult<Position> {
+async fn do_calculate_for_symbol(symbol: String) -> WalletResult<Position> {
     // Ensure we do not try to calculate for the same symbol more than once at a time.
     // Create it here so it is locked even before the thread gets to run, to avoid
     // races with callers of this function or multiple calls of this function.
     let guard = LockMap::lock(Position::collection_name(), &symbol);
 
+    let db = WalletDB::get_connection();
     let collection = db.collection(BaseOperation::collection_name());
 
     let mut date_from = Utc.timestamp(61, 0);
 
     // If we already have a bunch of position snapshots, we pick up
     // from the last one rather than starting from scratch.
-    let mut position = Position::last(db, &symbol)
+    let mut position = Position::last(&symbol)
         .map(|pos| {
             date_from = pos.time.with_timezone(&Utc);
             pos
@@ -129,12 +127,8 @@ async fn do_calculate_for_symbol(
         ]
     };
 
-    let options = Some(FindOptions::new()).map(|mut options| {
-        options.sort = Some(doc! { "time": 1 });
-        options
-    });
-
-    let cursor = match collection.find(Some(filter), options) {
+    let options = FindOptions::builder().sort(doc! { "time": 1 });
+    let cursor = match collection.find(filter, options.build()) {
         Ok(cursor) => cursor,
         Err(e) => {
             return Err(dang!(Database, e));
@@ -192,9 +186,8 @@ async fn do_calculate_for_symbol(
     references.push(position.clone());
 
     std::thread::spawn(move || {
-        let db = WalletDB::get_connection();
         let _guard = guard;
-        Position::create_snapshots(&db, &symbol, references).map_err(|e| {
+        Position::create_snapshots(&symbol, references).map_err(|e| {
             warn!("failure saving references: {:?}", e);
             e
         })
@@ -204,28 +197,22 @@ async fn do_calculate_for_symbol(
 }
 
 impl Position {
-    pub fn last(db: &mongodb::db::Database, symbol: &str) -> Option<Self> {
+    pub fn last(symbol: &str) -> Option<Self> {
+        let db = WalletDB::get_connection();
         let collection = db.collection(Position::collection_name());
 
         let filter = doc! { "symbol": symbol.to_string() };
+        let options = FindOneOptions::builder().sort(doc! { "time": -1 }).build();
 
-        let options = Some(FindOptions::new()).map(|mut options| {
-            options.sort = Some(doc! { "time": -1 });
-            options
-        });
-
-        if let Ok(doc) = collection.find_one(Some(filter), options) {
-            doc.map(|doc| bson::from_bson(Bson::Document(doc)).ok())
+        if let Ok(doc) = collection.find_one(filter, options) {
+            doc.map(|doc| from_bson(Bson::Document(doc)).ok())
                 .unwrap_or(None)
         } else {
             None
         }
     }
 
-    pub fn calculate_for_symbol(
-        db: &mongodb::db::Database,
-        symbol: &str,
-    ) -> WalletResult<Position> {
+    pub fn calculate_for_symbol(symbol: &str) -> WalletResult<Position> {
         // Ensure we do not try to calculate for the same symbol more than once at a time.
         let _guard = LockMap::lock(BaseOperation::collection_name(), symbol);
 
@@ -234,9 +221,8 @@ impl Position {
         let current_price =
             std::thread::spawn(move || Historical::current_price_for_symbol(ysymbol));
 
-        let db = db.clone();
         let dsymbol = symbol.to_string();
-        let mut position = std::thread::spawn(move || do_calculate_for_symbol(&db, dsymbol))
+        let mut position = std::thread::spawn(move || do_calculate_for_symbol(dsymbol))
             .join()
             .unwrap()?;
 
@@ -247,14 +233,14 @@ impl Position {
         Ok(position)
     }
 
-    pub fn calculate_all(db: &mongodb::db::Database) -> WalletResult<Vec<Position>> {
+    pub fn calculate_all() -> WalletResult<Vec<Position>> {
         let positions = Mutex::new(Vec::<Position>::new());
 
-        let symbols = get_distinct_symbols(db)?;
+        let symbols = get_distinct_symbols()?;
         symbols
             .into_par_iter()
             .try_for_each::<_, WalletResult<_>>(|symbol| {
-                let position = Position::calculate_for_symbol(db, &symbol)?;
+                let position = Position::calculate_for_symbol(&symbol)?;
                 positions.lock().unwrap().push(position);
                 Ok(())
             })?;
@@ -262,11 +248,7 @@ impl Position {
         Ok(positions.into_inner().unwrap())
     }
 
-    pub fn create_snapshots(
-        db: &mongodb::db::Database,
-        symbol: &str,
-        mut references: Vec<Position>,
-    ) -> WalletResult<()> {
+    pub fn create_snapshots(symbol: &str, mut references: Vec<Position>) -> WalletResult<()> {
         info!("[{}] saving Position snapshots", symbol);
 
         let mut previous_position: Option<Position> = None;
@@ -277,7 +259,7 @@ impl Position {
                     symbol, previous_position.time, position.time
                 );
                 for friday in find_all_fridays_between(previous_position.time, position.time) {
-                    let asset_day = Historical::get_for_day_with_fallback(db, symbol, friday);
+                    let asset_day = Historical::get_for_day_with_fallback(symbol, friday);
                     if let Ok(asset_day) = asset_day {
                         previous_position.time = asset_day.time.with_timezone(&Local);
                         previous_position.current_price = asset_day.close;
@@ -294,7 +276,7 @@ impl Position {
                         - previous_position.cost_basis;
 
                     debug!("[{}] inserting snapshot {:?}", symbol, previous_position);
-                    insert_one(&db, previous_position.clone())?;
+                    insert_one(previous_position.clone())?;
                 }
             }
 
@@ -317,6 +299,8 @@ mod tests {
 
     #[test]
     fn position_calculation() {
+        WalletDB::init_client("mongodb://localhost:27017/");
+
         let db = WalletDB::get_connection();
 
         assert!(
@@ -352,7 +336,7 @@ mod tests {
 
         let mut sales = Vec::<Sale>::new();
 
-        assert!(insert_one(&db, stock.clone()).is_ok(), true);
+        assert!(insert_one(stock.clone()).is_ok(), true);
 
         stock.operation.price = 12.0;
         stock.operation.quantity = 50;
@@ -366,31 +350,31 @@ mod tests {
             sell_price: stock.operation.price,
         });
 
-        assert!(insert_one(&db, stock.clone()).is_ok(), true);
+        assert!(insert_one(stock.clone()).is_ok(), true);
 
         stock.operation.price = 4.0;
         stock.operation.kind = OperationKind::Purchase;
         stock.operation.time = Local.ymd(2020, 3, 1).and_hms(12, 0, 0);
 
-        assert!(insert_one(&db, stock.clone()).is_ok(), true);
+        assert!(insert_one(stock.clone()).is_ok(), true);
 
         // This is a Friday, so will test corner cases of the position snapshots.
         stock.operation.price = 10.0;
         stock.operation.kind = OperationKind::Purchase;
         stock.operation.time = Local.ymd(2020, 3, 27).and_hms(12, 0, 0);
 
-        assert!(insert_one(&db, stock).is_ok(), true);
+        assert!(insert_one(stock).is_ok(), true);
 
         // Do a full update first, which should trigger calculation for our
         // FAKE4. This means the specific call below should start from an
         // existing reference.
-        Position::calculate_all(&db).expect("Something went wrong");
+        Position::calculate_all().expect("Something went wrong");
 
-        let position = Position::calculate_for_symbol(&db, "FAKE4");
+        let position = Position::calculate_for_symbol("FAKE4");
         assert_eq!(position.is_ok(), true);
         let position = position.unwrap();
 
-        let same_position = Position::calculate_for_symbol(&db, "FAKE4");
+        let same_position = Position::calculate_for_symbol("FAKE4");
         assert_eq!(same_position.is_ok(), true);
         let same_position = same_position.unwrap();
 

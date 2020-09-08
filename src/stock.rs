@@ -22,7 +22,7 @@ pub struct StockOperation {
     pub operation: BaseOperation,
 }
 
-impl<'de> Queryable<'de> for StockOperation {
+impl Queryable for StockOperation {
     fn collection_name() -> &'static str {
         "operations"
     }
@@ -33,11 +33,8 @@ impl<'de> Queryable<'de> for StockOperation {
 /// Adds a new stock operation
 #[openapi]
 #[post("/stocks/operations", data = "<operation>")]
-pub fn add_stock_operation(
-    db: WalletDB,
-    operation: Json<StockOperation>,
-) -> WalletResult<Json<StockOperation>> {
-    api_add(db, operation)
+pub fn add_stock_operation(operation: Json<StockOperation>) -> WalletResult<Json<StockOperation>> {
+    api_add::<StockOperation>(operation)
 }
 
 /// # List stock operations
@@ -46,11 +43,10 @@ pub fn add_stock_operation(
 #[openapi]
 #[get("/stocks/operations?<options..>")]
 pub fn get_stock_operations(
-    db: WalletDB,
     options: Option<Form<ListingOptions>>,
 ) -> WalletResult<Rest<Json<Vec<StockOperation>>>> {
     println!("options: {:?}", options);
-    api_get::<StockOperation>(db, options)
+    api_get::<StockOperation>(options)
 }
 
 /// # Get stock operation
@@ -58,8 +54,8 @@ pub fn get_stock_operations(
 /// Get a specific stock operation
 #[openapi]
 #[get("/stocks/operations/<oid>")]
-pub fn get_stock_operation_by_oid(db: WalletDB, oid: String) -> WalletResult<Json<StockOperation>> {
-    api_get_one::<StockOperation>(db, oid)
+pub fn get_stock_operation_by_oid(oid: String) -> WalletResult<Json<StockOperation>> {
+    api_get_one::<StockOperation>(oid)
 }
 
 /// # Update a stock operation
@@ -68,11 +64,10 @@ pub fn get_stock_operation_by_oid(db: WalletDB, oid: String) -> WalletResult<Jso
 #[openapi]
 #[put("/stocks/operations/<oid>", data = "<operation>")]
 pub fn update_stock_operation_by_oid(
-    db: WalletDB,
     oid: String,
     operation: Json<StockOperation>,
 ) -> WalletResult<Json<StockOperation>> {
-    api_update::<StockOperation>(db, oid, operation)
+    api_update::<StockOperation>(oid, operation)
 }
 
 /// # Delete a stock operation
@@ -80,11 +75,8 @@ pub fn update_stock_operation_by_oid(
 /// Delete a specific stock operation
 #[openapi]
 #[delete("/stocks/operations/<oid>")]
-pub fn delete_stock_operation_by_oid(
-    db: WalletDB,
-    oid: String,
-) -> WalletResult<Json<StockOperation>> {
-    api_delete::<StockOperation>(db, oid)
+pub fn delete_stock_operation_by_oid(oid: String) -> WalletResult<Json<StockOperation>> {
+    api_delete::<StockOperation>(oid)
 }
 
 /// # Get a stock position
@@ -92,6 +84,6 @@ pub fn delete_stock_operation_by_oid(
 /// Get position for a specific stock
 #[openapi]
 #[get("/stocks/position/<symbol>")]
-pub fn get_stock_position_by_symbol(db: WalletDB, symbol: String) -> WalletResult<Json<Position>> {
-    Position::calculate_for_symbol(&*db, &symbol).map(Json)
+pub fn get_stock_position_by_symbol(symbol: String) -> WalletResult<Json<Position>> {
+    Position::calculate_for_symbol(&symbol).map(Json)
 }

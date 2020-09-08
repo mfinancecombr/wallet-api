@@ -1,7 +1,6 @@
 use chrono::{DateTime, Duration, Local, NaiveDateTime, TimeZone, Utc};
-use mongodb::coll::options::FindOptions;
-use mongodb::db::ThreadedDatabase;
-use mongodb::{bson, doc, Bson};
+use mongodb::bson::{doc, from_bson, to_bson, Bson, Document};
+use mongodb::options::FindOneOptions;
 use rayon::prelude::*;
 use rocket_okapi::openapi;
 use serde::{Deserialize, Serialize};
@@ -29,7 +28,7 @@ pub struct AssetDay {
     pub volume: i64,
 }
 
-impl<'de> Queryable<'de> for AssetDay {
+impl Queryable for AssetDay {
     fn collection_name() -> &'static str {
         "historical"
     }
@@ -58,8 +57,8 @@ impl From<Bar> for AssetDay {
 /// database. Does not return data.
 #[openapi]
 #[post("/historicals/refresh")]
-pub fn refresh_historicals(db: WalletDB) -> WalletResult<()> {
-    Historical::refresh_all(&*db)
+pub fn refresh_historicals() -> WalletResult<()> {
+    Historical::refresh_all()
 }
 
 /// # Triggers a full refresh of historical data for a symbol
@@ -67,20 +66,20 @@ pub fn refresh_historicals(db: WalletDB) -> WalletResult<()> {
 /// Triggers a full refresh of historical price data for a symbol. Does not return data.
 #[openapi]
 #[post("/historicals/refresh/<symbol>")]
-pub fn refresh_historical_for_symbol(db: WalletDB, symbol: String) -> WalletResult<()> {
-    do_refresh_for_symbol(&*db, &symbol)
+pub fn refresh_historical_for_symbol(symbol: String) -> WalletResult<()> {
+    do_refresh_for_symbol(&symbol)
 }
 
 pub struct Historical {}
 
 impl Historical {
-    pub fn refresh_all(wallet: &mongodb::db::Database) -> WalletResult<()> {
-        let symbols = get_distinct_symbols(wallet)?;
+    pub fn refresh_all() -> WalletResult<()> {
+        let symbols = get_distinct_symbols()?;
 
         symbols
             .into_par_iter()
             .try_for_each::<_, WalletResult<_>>(|symbol| {
-                do_refresh_for_symbol(wallet, &symbol)?;
+                do_refresh_for_symbol(&symbol)?;
                 Ok(())
             })?;
 
@@ -110,16 +109,9 @@ impl Historical {
     }
 
     #[cfg(not(test))]
-    pub fn get_for_day_with_fallback(
-        wallet: &mongodb::db::Database,
-        symbol: &str,
-        date: Date<Utc>,
-    ) -> WalletResult<AssetDay> {
-        let historical = wallet.collection("historical");
-        let find_options = Some(FindOptions::new()).map(|mut options| {
-            options.sort = Some(doc! { "time": -1 });
-            options
-        });
+    pub fn get_for_day_with_fallback(symbol: &str, date: Date<Utc>) -> WalletResult<AssetDay> {
+        let db = WalletDB::get_connection();
+        let historical = db.collection("historical");
 
         // We search for historical prices over a week to make sure we get
         // data even through weekends and holidays.
@@ -136,15 +128,14 @@ impl Historical {
             ]
         };
 
+        let find_options = FindOneOptions::builder().sort(doc! { "time": -1 });
+
         let document = historical
-            .find_one(Some(filter), find_options)
+            .find_one(filter, find_options.build())
             .map_err(|e| dang!(Database, e))?;
 
         if let Some(document) = document {
-            Ok(
-                bson::from_bson::<AssetDay>(Bson::Document(document))
-                    .map_err(|e| dang!(Bson, e))?,
-            )
+            Ok(from_bson::<AssetDay>(Bson::Document(document)).map_err(|e| dang!(Bson, e))?)
         } else {
             Err(BackendError::NotFound)
         }
@@ -152,7 +143,7 @@ impl Historical {
 }
 
 #[tokio::main]
-async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> WalletResult<()> {
+async fn do_refresh_for_symbol(symbol: &str) -> WalletResult<()> {
     // Ensure we do not try to refresh the same symbol more than once at a time.
     let _guard = LockMap::lock("historical", symbol);
 
@@ -161,14 +152,13 @@ async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> 
     // First check if we need to override our since constraint, as we may
     // already have downloaded some historical data, and we don't want to
     // lose any of the earlier ones when the API moves its availability window.
-    let mut options = FindOptions::new();
-    options.sort = Some(doc! { "time": -1 });
-    wallet
-        .collection("historical")
-        .find_one(Some(doc! { "symbol": symbol }), Some(options))
+    let db = WalletDB::get_connection();
+    let options = FindOneOptions::builder().sort(doc! { "time": -1 });
+    db.collection("historical")
+        .find_one(doc! { "symbol": symbol }, options.build())
         .map(|document| {
             if let Some(document) = document {
-                let asset_day: Result<AssetDay, _> = bson::from_bson(Bson::Document(document));
+                let asset_day: Result<AssetDay, _> = from_bson(Bson::Document(document));
                 if let Ok(asset_day) = asset_day {
                     // The range for yahoo_finance is inclusive and a bit weird, as it seems
                     // to disregard the time(?). To avoid duplicating the last day we have,
@@ -202,7 +192,7 @@ async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> 
         }
     };
 
-    let mut docs = Vec::<bson::ordered::OrderedDocument>::new();
+    let mut docs = Vec::<Document>::new();
     for bar in data {
         let mut asset_day = AssetDay::from(bar);
         asset_day.symbol = symbol.to_string();
@@ -215,7 +205,7 @@ async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> 
             continue;
         }
 
-        let doc = bson::to_bson(&asset_day).map_err(|e| dang!(Bson, e))?;
+        let doc = to_bson(&asset_day).map_err(|e| dang!(Bson, e))?;
 
         let doc = doc
             .as_document()
@@ -228,8 +218,7 @@ async fn do_refresh_for_symbol(wallet: &mongodb::db::Database, symbol: &str) -> 
         return Ok(());
     }
 
-    wallet
-        .collection("historical")
+    db.collection("historical")
         .insert_many(docs, None)
         .map_err(|e| dang!(Database, e))
         .map(|_| ())
@@ -243,6 +232,8 @@ mod tests {
 
     #[test]
     fn repeated_refreshes() {
+        WalletDB::init_client("mongodb://localhost:27017/");
+
         let db = WalletDB::get_connection();
 
         let collection = db.collection("historical");
@@ -250,11 +241,13 @@ mod tests {
         assert_eq!(collection.delete_many(doc! {}, None).is_ok(), true);
 
         // Downloading the data...
-        let result = do_refresh_for_symbol(&db, "ANIM3");
+        let result = do_refresh_for_symbol("ANIM3");
         assert_eq!(result.is_ok(), true);
 
         // Did we add some stuff?
-        let original_count = collection.count(None, None).expect("Count failed");
+        let original_count = collection
+            .count_documents(None, None)
+            .expect("Count failed");
         assert!(original_count > 0);
 
         // Delete the last year.
@@ -266,23 +259,29 @@ mod tests {
             .expect("Delete many failed");
 
         // Make sure we actually deleted something, but still have a bit.
-        let count = collection.count(None, None).expect("Count failed");
+        let count = collection
+            .count_documents(None, None)
+            .expect("Count failed");
         assert!(count > 0 && count < original_count);
 
         // Refresh again.
-        let result = do_refresh_for_symbol(&db, "ANIM3");
+        let result = do_refresh_for_symbol("ANIM3");
         assert_eq!(result.is_ok(), true);
 
         // Do we get to the same number we had at the first run?
-        let count = collection.count(None, None).expect("Count failed");
+        let count = collection
+            .count_documents(None, None)
+            .expect("Count failed");
         assert_eq!(count, original_count);
 
         // Refresh yet again.
-        let result = do_refresh_for_symbol(&db, "ANIM3");
+        let result = do_refresh_for_symbol("ANIM3");
         assert_eq!(result.is_ok(), true);
 
         // Do we still get to the same number we had at the first run?
-        let count = collection.count(None, None).expect("Count failed");
+        let count = collection
+            .count_documents(None, None)
+            .expect("Count failed");
         assert_eq!(count, original_count);
     }
 }

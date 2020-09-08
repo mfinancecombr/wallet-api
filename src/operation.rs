@@ -1,11 +1,10 @@
 use chrono::{DateTime, Local};
-use mongodb::db::ThreadedDatabase;
 use rocket_okapi::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 use crate::error::{BackendError, WalletResult};
-use crate::walletdb::Queryable;
+use crate::walletdb::{Queryable, WalletDB};
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -47,7 +46,7 @@ pub struct BaseOperation {
     pub portfolio: String,
 }
 
-impl<'de> Queryable<'de> for BaseOperation {
+impl Queryable for BaseOperation {
     fn collection_name() -> &'static str {
         "operations"
     }
@@ -61,8 +60,9 @@ fn default_portfolio() -> String {
     "default".to_string()
 }
 
-pub fn get_distinct_symbols(wallet: &mongodb::db::Database) -> WalletResult<Vec<String>> {
-    let collection = wallet.collection("operations");
+pub fn get_distinct_symbols() -> WalletResult<Vec<String>> {
+    let db = WalletDB::get_connection();
+    let collection = db.collection("operations");
 
     let symbols = collection
         .distinct("symbol", None, None)

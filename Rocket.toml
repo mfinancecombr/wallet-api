@@ -1,2 +1,2 @@
 [global.databases]
-wallet = { url = "mongodb://localhost:27017/wallet" }
+wallet = { url = "mongodb://localhost:27017" }

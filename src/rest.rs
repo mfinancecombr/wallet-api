@@ -1,5 +1,5 @@
-use mongodb::coll::options::FindOptions;
-use mongodb::{bson, doc};
+use mongodb::bson::doc;
+use mongodb::options::FindOptions;
 use okapi::openapi3::Responses;
 use rocket::http::Status;
 use rocket::request::{Form, Request};
@@ -45,63 +45,79 @@ pub struct ListingOptions {
     _sort: Option<String>,
 }
 
-pub fn api_add<'de, T>(db: WalletDB, operation: Json<T>) -> WalletResult<Json<T>>
+pub fn api_add<T>(operation: Json<T>) -> WalletResult<Json<T>>
 where
-    T: Queryable<'de>,
+    T: Queryable,
 {
-    insert_one::<T>(&*db, operation.into_inner()).map(Json)
+    insert_one::<T>(operation.into_inner()).map(Json)
 }
 
-pub fn api_get<'de, T>(
-    db: WalletDB,
-    options: Option<Form<ListingOptions>>,
-) -> WalletResult<Rest<Json<Vec<T>>>>
+pub fn api_get<T>(options: Option<Form<ListingOptions>>) -> WalletResult<Rest<Json<Vec<T>>>>
 where
-    T: Queryable<'de>,
+    T: Queryable,
 {
-    let mut find_options = FindOptions::new();
+    let mut find_options: Option<FindOptions> = None;
     if let Some(options) = options {
-        let mut limit: Option<i64> = None;
-        if options._end.is_some() && options._start.is_some() {
-            limit = Some(options._end.unwrap() - options._start.unwrap());
-        }
-
-        find_options.skip = options._start;
-        find_options.limit = limit;
-        if let Some(sort) = &options._sort {
-            find_options.sort = Some(doc! {
-                sort: options._order.as_ref().map(|order| {
-                    if order == "DESC" {
-                        1
+        let skip = options._start;
+        let limit = {
+            if options._end.is_some() && options._start.is_some() {
+                Some(options._end.unwrap() - options._start.unwrap())
+            } else {
+                None
+            }
+        };
+        let sort = {
+            if let Some(sort) = &options._sort {
+                let order = {
+                    if let Some(order) = &options._order {
+                        if order == "DESC" {
+                            1
+                        } else {
+                            -1
+                        }
                     } else {
                         -1
                     }
-                }).unwrap_or(1)
-            });
-        }
+                };
+
+                Some(doc! {
+                    sort: order
+                })
+            } else {
+                None
+            }
+        };
+
+        find_options = Some(
+            FindOptions::builder()
+                .skip(skip)
+                .limit(limit)
+                .sort(sort)
+                .build(),
+        );
     };
 
-    let count = get_count::<T>(&*db)?;
-    get::<T>(&*db, Some(find_options)).map(|results| Rest(Json(results), count as usize))
+    let count = get_count::<T>()?;
+    get::<T>(find_options).map(|results| Rest(Json(results), count as usize))
 }
 
-pub fn api_get_one<'de, T>(db: WalletDB, oid: String) -> WalletResult<Json<T>>
+pub fn api_get_one<T>(oid: String) -> WalletResult<Json<T>>
 where
-    T: Queryable<'de>,
+    T: Queryable,
 {
-    get_one::<T>(&*db, oid).map(Json)
+    get_one::<T>(oid).map(Json)
 }
 
-pub fn api_update<'de, T>(db: WalletDB, oid: String, operation: Json<T>) -> WalletResult<Json<T>>
+pub fn api_update<T>(oid: String, operation: Json<T>) -> WalletResult<Json<T>>
 where
-    T: Queryable<'de>,
+    T: Queryable,
 {
-    update_one::<T>(&*db, oid, operation.into_inner()).map(Json)
+    update_one::<T>(oid, operation.into_inner()).map(Json)
 }
 
-pub fn api_delete<'de, T>(db: WalletDB, oid: String) -> WalletResult<Json<T>>
+pub fn api_delete<T>(oid: String) -> WalletResult<Json<T>>
 where
-    T: Queryable<'de>,
+    T: Queryable,
 {
-    delete_one::<T>(&*db, oid).map(Json)
+    delete_one::<T>(oid).map(Json)
 }
