@@ -15,7 +15,7 @@ pub struct Broker {
     cnpj: Option<String>,
 }
 
-impl<'de> Queryable<'de> for Broker {
+impl Queryable for Broker {
     fn collection_name() -> &'static str {
         "brokers"
     }
@@ -26,8 +26,8 @@ impl<'de> Queryable<'de> for Broker {
 /// Adds a new broker
 #[openapi]
 #[post("/brokers", data = "<broker>")]
-pub fn add_broker(db: WalletDB, broker: Json<Broker>) -> WalletResult<Json<Broker>> {
-    api_add(db, broker)
+pub fn add_broker(broker: Json<Broker>) -> WalletResult<Json<Broker>> {
+    api_add(broker)
 }
 
 /// # List brokers
@@ -35,11 +35,8 @@ pub fn add_broker(db: WalletDB, broker: Json<Broker>) -> WalletResult<Json<Broke
 /// Lists all brokers
 #[openapi]
 #[get("/brokers?<options..>")]
-pub fn get_brokers(
-    db: WalletDB,
-    options: Option<Form<ListingOptions>>,
-) -> WalletResult<Rest<Json<Vec<Broker>>>> {
-    api_get::<Broker>(db, options)
+pub fn get_brokers(options: Option<Form<ListingOptions>>) -> WalletResult<Rest<Json<Vec<Broker>>>> {
+    api_get::<Broker>(options)
 }
 
 /// # Get broker
@@ -47,8 +44,8 @@ pub fn get_brokers(
 /// Get a specific broker
 #[openapi]
 #[get("/brokers/<oid>")]
-pub fn get_broker_by_oid(db: WalletDB, oid: String) -> WalletResult<Json<Broker>> {
-    api_get_one::<Broker>(db, oid)
+pub fn get_broker_by_oid(oid: String) -> WalletResult<Json<Broker>> {
+    api_get_one::<Broker>(oid)
 }
 
 /// # Update a broker
@@ -56,12 +53,8 @@ pub fn get_broker_by_oid(db: WalletDB, oid: String) -> WalletResult<Json<Broker>
 /// Update a specific broker
 #[openapi]
 #[put("/brokers/<oid>", data = "<broker>")]
-pub fn update_broker_by_oid(
-    db: WalletDB,
-    oid: String,
-    broker: Json<Broker>,
-) -> WalletResult<Json<Broker>> {
-    api_update::<Broker>(db, oid, broker)
+pub fn update_broker_by_oid(oid: String, broker: Json<Broker>) -> WalletResult<Json<Broker>> {
+    api_update::<Broker>(oid, broker)
 }
 
 /// # Delete a broker
@@ -69,6 +62,6 @@ pub fn update_broker_by_oid(
 /// Delete a specific broker
 #[openapi]
 #[delete("/brokers/<oid>")]
-pub fn delete_broker_by_oid(db: WalletDB, oid: String) -> WalletResult<Json<Broker>> {
-    api_delete::<Broker>(db, oid)
+pub fn delete_broker_by_oid(oid: String) -> WalletResult<Json<Broker>> {
+    api_delete::<Broker>(oid)
 }

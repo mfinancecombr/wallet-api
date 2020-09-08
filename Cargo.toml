@@ -12,6 +12,7 @@ clokwerk = "0.3"
 futures = "0.3"
 lazy_static = "1.4"
 log = "0.4"
+mongodb = { version = "1.1.0", default_features = false, features = ["sync"] }
 schemars = { version = "0.8.0-alpha-4", features = ["preserve_order", "chrono"] }
 okapi = { version = "0.5.0-alpha-1" }
 rayon = "1.4.0"
@@ -28,7 +29,4 @@ approx = "0.3"
 [dependencies.rocket_contrib]
 version = "0.4.3"
 default-features = false
-features = ["json", "mongodb_pool"]
-
-[dependencies.mongodb]
-version = "0.3.12"
+features = ["json", "databases"]
