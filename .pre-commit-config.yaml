@@ -14,6 +14,11 @@ repos:
         types: [non-executable, file, text]
         exclude_types: [markdown]
 
+  - repo: https://github.com/prettier/prettier
+    rev: 2.1.1
+    hooks:
+      - id: prettier
+
   - repo: local
     hooks:
       - id: rustfmt
