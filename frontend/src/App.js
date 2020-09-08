@@ -1,12 +1,11 @@
 import * as React from "react";
-import { Admin, Resource, ListGuesser, fetchUtils } from "react-admin";
+import { Admin, Resource } from "react-admin";
 import jsonServerProvider from "ra-data-json-server";
 
-import { BrokerList, BrokerEdit, BrokerCreate, BrokerIcon } from "./Brokers";
+import { BrokerList, BrokerEdit, BrokerCreate } from "./Brokers";
 import {
   StockOperationCreate,
   StockOperationEdit,
-  StockOperationIcon,
   StockOperationList,
 } from "./StockOperations";
 
