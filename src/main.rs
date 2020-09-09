@@ -13,6 +13,7 @@ use rocket_okapi::swagger_ui::*;
 mod broker;
 #[macro_use]
 mod error;
+mod event;
 mod historical;
 mod operation;
 mod portfolio;
@@ -24,6 +25,7 @@ mod walletdb;
 mod x_response_time;
 
 use broker::*;
+use event::*;
 use historical::*;
 use portfolio::*;
 use scheduling::Scheduler;
@@ -47,12 +49,13 @@ fn main() {
                 get_broker_by_oid,
                 update_broker_by_oid,
                 delete_broker_by_oid,
-                // Stocks
-                add_stock_operation,
-                get_stock_operations,
-                get_stock_operation_by_oid,
-                update_stock_operation_by_oid,
-                delete_stock_operation_by_oid,
+                // Events
+                add_event,
+                get_events,
+                get_event_by_oid,
+                update_event_by_oid,
+                delete_event_by_oid,
+                // Stock
                 get_stock_position_by_symbol,
                 // Historical
                 refresh_historicals,

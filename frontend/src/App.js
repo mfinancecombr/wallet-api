@@ -3,11 +3,7 @@ import { Admin, Resource } from "react-admin";
 import jsonServerProvider from "ra-data-json-server";
 
 import { BrokerList, BrokerEdit, BrokerCreate } from "./Brokers";
-import {
-  StockOperationCreate,
-  StockOperationEdit,
-  StockOperationList,
-} from "./StockOperations";
+import { EventCreate, EventEdit, EventList } from "./Events";
 import { PortfolioList, PortfolioEdit, PortfolioCreate } from "./Portfolios";
 
 const dataProvider = jsonServerProvider("http://localhost:8000/api/v1");
@@ -20,10 +16,10 @@ const App = () => (
       create={BrokerCreate}
     />
     <Resource
-      name="stocks/operations"
-      list={StockOperationList}
-      edit={StockOperationEdit}
-      create={StockOperationCreate}
+      name="events"
+      list={EventList}
+      edit={EventEdit}
+      create={EventCreate}
     />
     <Resource
       name="portfolios"

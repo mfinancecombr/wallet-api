@@ -1,17 +1,17 @@
 use chrono::{Date, DateTime, Datelike, Duration, TimeZone, Utc, Weekday};
 use log::{debug, info, warn};
-use mongodb::bson::{doc, from_bson, Bson, Document};
+use mongodb::bson::{doc, from_bson, Bson};
 use mongodb::options::{FindOneOptions, FindOptions};
 use rayon::prelude::*;
 use rocket_okapi::JsonSchema;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::cmp::PartialEq;
 use std::sync::Mutex;
 
 use crate::error::*;
+use crate::event::{Event, EventDetail};
 use crate::historical::Historical;
-use crate::operation::{get_distinct_symbols, BaseOperation, OperationKind};
+use crate::operation::{get_distinct_symbols, OperationKind};
 use crate::scheduling::LockMap;
 use crate::walletdb::*;
 
@@ -58,20 +58,6 @@ pub struct Sale {
     pub sell_price: f64,
 }
 
-fn get_safely<T>(doc: &Document, key: &str) -> WalletResult<T>
-where
-    T: DeserializeOwned,
-{
-    if let Some(value) = doc.get(key) {
-        from_bson::<T>(value.clone()).map_err(|e| dang!(Bson, e))
-    } else {
-        Err(dang!(
-            Database,
-            format!("field `{}` not found on document", key)
-        ))
-    }
-}
-
 fn find_all_fridays_between(from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Date<Utc>> {
     let mut fridays = Vec::<Date<Utc>>::new();
     let mut date = from.date();
@@ -97,7 +83,7 @@ async fn do_calculate_for_symbol(symbol: String) -> WalletResult<Position> {
     let guard = LockMap::lock(Position::collection_name(), &symbol);
 
     let db = WalletDB::get_connection();
-    let collection = db.collection(BaseOperation::collection_name());
+    let collection = db.collection(Event::collection_name());
 
     let mut date_from = Utc.timestamp(61, 0);
 
@@ -115,8 +101,7 @@ async fn do_calculate_for_symbol(symbol: String) -> WalletResult<Position> {
             { "symbol": &symbol },
             {
                 "time": {
-                    "$lte":Utc::today().and_hms(23, 59, 59)
-                        .with_timezone(&Utc).to_rfc3339()
+                    "$lte": Utc::today().and_hms(23, 59, 59).to_rfc3339()
                 }
             },
             {
@@ -138,41 +123,44 @@ async fn do_calculate_for_symbol(symbol: String) -> WalletResult<Position> {
     let mut references = Vec::<Position>::new();
     for document in cursor {
         if let Ok(document) = document {
-            position.time = get_safely::<DateTime<Utc>>(&document, "time")?.with_timezone(&Utc);
+            let event = Event::from_doc(document)?;
 
-            let quantity = get_safely::<i64>(&document, "quantity")?;
-            let kind = get_safely::<OperationKind>(&document, "type")?;
-            match kind {
-                OperationKind::Purchase => {
-                    let price = get_safely::<f64>(&document, "price")?;
-                    position.cost_basis += price * quantity as f64;
-                    position.quantity += quantity;
+            position.time = event.time;
+
+            match event.detail {
+                EventDetail::StockOperation(operation) => {
+                    let operation = operation.operation;
+                    match operation.kind {
+                        OperationKind::Purchase => {
+                            position.cost_basis += operation.price * operation.quantity as f64;
+                            position.quantity += operation.quantity;
+                        }
+                        OperationKind::Sale => {
+                            /* When selling we need to use the average price at the moment
+                             * of the sale for the average calculation to work. We may
+                             * take out too little if the current price is lower or too
+                             * much, otherwise.
+                             */
+                            let cost_price = position.cost_basis / position.quantity as f64;
+                            position.cost_basis -= cost_price * operation.quantity as f64;
+                            position.quantity -= operation.quantity;
+
+                            position.realized += operation.quantity as f64 * operation.price
+                                - operation.quantity as f64 * cost_price;
+
+                            position.sales.push(Sale {
+                                time: position.time,
+                                quantity: operation.quantity,
+                                cost_price,
+                                sell_price: operation.price,
+                            })
+                        }
+                    }
+
+                    if position.quantity != 0 && position.cost_basis != 0.0 {
+                        position.average_price = position.cost_basis / position.quantity as f64;
+                    }
                 }
-                OperationKind::Sale => {
-                    /* When selling we need to use the average price at the moment
-                     * of the sale for the average calculation to work. We may
-                     * take out too little if the current price is lower or too
-                     * much, otherwise.
-                     */
-                    let cost_price = position.cost_basis / position.quantity as f64;
-                    position.cost_basis -= cost_price * quantity as f64;
-                    position.quantity -= quantity;
-
-                    let sell_price = get_safely::<f64>(&document, "price")?;
-                    position.realized +=
-                        quantity as f64 * sell_price - quantity as f64 * cost_price;
-
-                    position.sales.push(Sale {
-                        time: position.time.with_timezone(&Utc),
-                        quantity,
-                        cost_price,
-                        sell_price,
-                    })
-                }
-            }
-
-            if position.quantity != 0 && position.cost_basis != 0.0 {
-                position.average_price = position.cost_basis / position.quantity as f64;
             }
 
             references.push(position.clone());
@@ -214,7 +202,7 @@ impl Position {
 
     pub fn calculate_for_symbol(symbol: &str) -> WalletResult<Position> {
         // Ensure we do not try to calculate for the same symbol more than once at a time.
-        let _guard = LockMap::lock(BaseOperation::collection_name(), symbol);
+        let _guard = LockMap::lock(Event::collection_name(), symbol);
 
         // Fire a background thread to get the current price.
         let ysymbol = symbol.to_string();
@@ -263,14 +251,14 @@ impl Position {
                 for friday in find_all_fridays_between(previous_position.time, position.time) {
                     let asset_day = Historical::get_for_day_with_fallback(symbol, friday);
                     if let Ok(asset_day) = asset_day {
-                        previous_position.time = asset_day.time.with_timezone(&Utc);
+                        previous_position.time = asset_day.time;
                         previous_position.current_price = asset_day.close;
                     } else {
                         warn!(
                             "failed to find historical data for {} on {}",
                             symbol, friday
                         );
-                        previous_position.time = friday.with_timezone(&Utc).and_hms(12, 0, 0);
+                        previous_position.time = friday.and_hms(12, 0, 0);
                     }
 
                     previous_position.gain = previous_position.current_price
@@ -296,7 +284,7 @@ mod tests {
     use std::vec::Vec;
 
     use super::*;
-    use crate::operation::{AssetKind, OperationKind};
+    use crate::operation::{AssetKind, BaseOperation, OperationKind};
     use crate::stock::StockOperation;
 
     #[test]
@@ -306,7 +294,7 @@ mod tests {
         let db = WalletDB::get_connection();
 
         assert!(
-            db.collection(BaseOperation::collection_name())
+            db.collection(Event::collection_name())
                 .delete_many(doc! {}, None)
                 .is_ok(),
             true
@@ -321,51 +309,63 @@ mod tests {
 
         let symbol = String::from("FAKE4");
 
-        let mut stock = StockOperation {
-            asset_kind: AssetKind::Stock,
-            operation: BaseOperation {
-                id: None,
-                kind: OperationKind::Purchase,
-                broker: String::from("FakeTestBroker"),
-                portfolios: vec![String::from("FakeTestWallet")],
-                symbol: symbol.clone(),
-                time: Utc.ymd(2020, 1, 1).and_hms(12, 0, 0),
-                price: 10.0,
-                quantity: 100,
-                fees: 0.0,
-            },
+        let mut event = Event {
+            id: None,
+            symbol: symbol.clone(),
+            time: Utc.ymd(2020, 1, 1).and_hms(12, 0, 0),
+            detail: EventDetail::StockOperation(StockOperation {
+                asset_kind: AssetKind::Stock,
+                operation: BaseOperation {
+                    kind: OperationKind::Purchase,
+                    broker: String::from("FakeTestBroker"),
+                    portfolios: vec![String::from("FakeTestWallet")],
+                    price: 10.0,
+                    quantity: 100,
+                    fees: 0.0,
+                },
+            }),
         };
 
         let mut sales = Vec::<Sale>::new();
 
-        assert!(insert_one(stock.clone()).is_ok(), true);
+        assert!(insert_one(event.clone()).is_ok(), true);
 
-        stock.operation.price = 12.0;
-        stock.operation.quantity = 50;
-        stock.operation.kind = OperationKind::Sale;
-        stock.operation.time = Utc.ymd(2020, 2, 1).and_hms(12, 0, 0);
+        {
+            let operation = event.detail.borrow_mut();
 
-        sales.push(Sale {
-            time: stock.operation.time,
-            quantity: stock.operation.quantity,
-            cost_price: 10.0,
-            sell_price: stock.operation.price,
-        });
+            event.time = Utc.ymd(2020, 2, 1).and_hms(12, 0, 0);
+            operation.price = 12.0;
+            operation.quantity = 50;
+            operation.kind = OperationKind::Sale;
 
-        assert!(insert_one(stock.clone()).is_ok(), true);
+            sales.push(Sale {
+                time: event.time,
+                quantity: operation.quantity,
+                cost_price: 10.0,
+                sell_price: operation.price,
+            });
 
-        stock.operation.price = 4.0;
-        stock.operation.kind = OperationKind::Purchase;
-        stock.operation.time = Utc.ymd(2020, 3, 1).and_hms(12, 0, 0);
+            assert!(insert_one(event.clone()).is_ok(), true);
+        }
 
-        assert!(insert_one(stock.clone()).is_ok(), true);
+        {
+            let operation = event.detail.borrow_mut();
+            event.time = Utc.ymd(2020, 3, 1).and_hms(12, 0, 0);
+            operation.price = 4.0;
+            operation.kind = OperationKind::Purchase;
 
-        // This is a Friday, so will test corner cases of the position snapshots.
-        stock.operation.price = 10.0;
-        stock.operation.kind = OperationKind::Purchase;
-        stock.operation.time = Utc.ymd(2020, 3, 27).and_hms(12, 0, 0);
+            assert!(insert_one(event.clone()).is_ok(), true);
+        }
 
-        assert!(insert_one(stock).is_ok(), true);
+        {
+            let operation = event.detail.borrow_mut();
+            // This is a Friday, so will test corner cases of the position snapshots.
+            event.time = Utc.ymd(2020, 3, 27).and_hms(12, 0, 0);
+            operation.price = 10.0;
+            operation.kind = OperationKind::Purchase;
+
+            assert!(insert_one(event).is_ok(), true);
+        }
 
         // Do a full update first, which should trigger calculation for our
         // FAKE4. This means the specific call below should start from an
