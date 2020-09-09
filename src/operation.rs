@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use rocket_okapi::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -6,35 +5,28 @@ use std::fmt::Debug;
 use crate::error::{BackendError, WalletResult};
 use crate::walletdb::{Queryable, WalletDB};
 
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum AssetKind {
     Stock,
     TesouroDireto,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum OperationKind {
     Purchase,
     Sale,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BaseOperation {
-    #[serde(alias = "_id")]
-    pub id: Option<String>,
-
-    pub symbol: String,
     pub price: f64,
     pub quantity: i64,
 
     #[serde(default)]
     pub fees: f64,
-
-    #[serde(default = "Utc::now")]
-    pub time: DateTime<Utc>,
 
     #[serde(rename = "type")]
     pub kind: OperationKind,
