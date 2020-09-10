@@ -1,4 +1,4 @@
-use chrono::{Date, DateTime, Datelike, Duration, Local, TimeZone, Utc, Weekday};
+use chrono::{Date, DateTime, Datelike, Duration, TimeZone, Utc, Weekday};
 use log::{debug, info, warn};
 use mongodb::bson::{doc, from_bson, Bson, Document};
 use mongodb::options::{FindOneOptions, FindOptions};
@@ -21,7 +21,7 @@ pub struct Position {
     pub average_price: f64,
     pub cost_basis: f64,
     pub quantity: i64,
-    pub time: DateTime<Local>,
+    pub time: DateTime<Utc>,
     pub current_price: f64,
     pub gain: f64,
     pub realized: f64,
@@ -35,7 +35,7 @@ impl Position {
             cost_basis: 0.0,
             quantity: 0,
             average_price: 0.0,
-            time: Local::now(),
+            time: Utc::now(),
             current_price: 0.0,
             gain: 0.0,
             realized: 0.0,
@@ -52,7 +52,7 @@ impl Queryable for Position {
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct Sale {
-    pub time: DateTime<Local>,
+    pub time: DateTime<Utc>,
     pub quantity: i64,
     pub cost_price: f64,
     pub sell_price: f64,
@@ -72,7 +72,7 @@ where
     }
 }
 
-fn find_all_fridays_between(from: DateTime<Local>, to: DateTime<Local>) -> Vec<Date<Utc>> {
+fn find_all_fridays_between(from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Date<Utc>> {
     let mut fridays = Vec::<Date<Utc>>::new();
     let mut date = from.date();
     let to = to.date();
@@ -115,7 +115,7 @@ async fn do_calculate_for_symbol(symbol: String) -> WalletResult<Position> {
             { "symbol": &symbol },
             {
                 "time": {
-                    "$lte": Local::today().and_hms(23, 59, 59)
+                    "$lte":Utc::today().and_hms(23, 59, 59)
                         .with_timezone(&Utc).to_rfc3339()
                 }
             },
@@ -138,7 +138,7 @@ async fn do_calculate_for_symbol(symbol: String) -> WalletResult<Position> {
     let mut references = Vec::<Position>::new();
     for document in cursor {
         if let Ok(document) = document {
-            position.time = get_safely::<DateTime<Utc>>(&document, "time")?.with_timezone(&Local);
+            position.time = get_safely::<DateTime<Utc>>(&document, "time")?.with_timezone(&Utc);
 
             let quantity = get_safely::<i64>(&document, "quantity")?;
             let kind = get_safely::<OperationKind>(&document, "type")?;
@@ -163,7 +163,7 @@ async fn do_calculate_for_symbol(symbol: String) -> WalletResult<Position> {
                         quantity as f64 * sell_price - quantity as f64 * cost_price;
 
                     position.sales.push(Sale {
-                        time: position.time.with_timezone(&Local),
+                        time: position.time.with_timezone(&Utc),
                         quantity,
                         cost_price,
                         sell_price,
@@ -182,7 +182,7 @@ async fn do_calculate_for_symbol(symbol: String) -> WalletResult<Position> {
     // Up to here we used the time for the last operation, but we have been asked
     // for the "current" position. We also need to add that to references' last position,
     // so that the snapshots will be calculated up to today.
-    position.time = Local::now();
+    position.time = Utc::now();
     references.push(position.clone());
 
     std::thread::spawn(move || {
@@ -261,14 +261,14 @@ impl Position {
                 for friday in find_all_fridays_between(previous_position.time, position.time) {
                     let asset_day = Historical::get_for_day_with_fallback(symbol, friday);
                     if let Ok(asset_day) = asset_day {
-                        previous_position.time = asset_day.time.with_timezone(&Local);
+                        previous_position.time = asset_day.time.with_timezone(&Utc);
                         previous_position.current_price = asset_day.close;
                     } else {
                         warn!(
                             "failed to find historical data for {} on {}",
                             symbol, friday
                         );
-                        previous_position.time = friday.with_timezone(&Local).and_hms(12, 0, 0);
+                        previous_position.time = friday.with_timezone(&Utc).and_hms(12, 0, 0);
                     }
 
                     previous_position.gain = previous_position.current_price
@@ -327,7 +327,7 @@ mod tests {
                 broker: String::from("FakeTestBroker"),
                 portfolio: String::from("FakeTestWallet"),
                 symbol: symbol.clone(),
-                time: Local.ymd(2020, 1, 1).and_hms(12, 0, 0),
+                time: Utc.ymd(2020, 1, 1).and_hms(12, 0, 0),
                 price: 10.0,
                 quantity: 100,
                 fees: 0.0,
@@ -341,7 +341,7 @@ mod tests {
         stock.operation.price = 12.0;
         stock.operation.quantity = 50;
         stock.operation.kind = OperationKind::Sale;
-        stock.operation.time = Local.ymd(2020, 2, 1).and_hms(12, 0, 0);
+        stock.operation.time = Utc.ymd(2020, 2, 1).and_hms(12, 0, 0);
 
         sales.push(Sale {
             time: stock.operation.time,
@@ -354,14 +354,14 @@ mod tests {
 
         stock.operation.price = 4.0;
         stock.operation.kind = OperationKind::Purchase;
-        stock.operation.time = Local.ymd(2020, 3, 1).and_hms(12, 0, 0);
+        stock.operation.time = Utc.ymd(2020, 3, 1).and_hms(12, 0, 0);
 
         assert!(insert_one(stock.clone()).is_ok(), true);
 
         // This is a Friday, so will test corner cases of the position snapshots.
         stock.operation.price = 10.0;
         stock.operation.kind = OperationKind::Purchase;
-        stock.operation.time = Local.ymd(2020, 3, 27).and_hms(12, 0, 0);
+        stock.operation.time = Utc.ymd(2020, 3, 27).and_hms(12, 0, 0);
 
         assert!(insert_one(stock).is_ok(), true);
 
@@ -386,7 +386,7 @@ mod tests {
 
         // Manually check that the time is pretty close to now, since we will update our
         // reference below with what we got.
-        assert!(Local::now() - position.time < Duration::seconds(10));
+        assert!(Utc::now() - position.time < Duration::seconds(10));
 
         // NOTE: Our Historical mock for now just returns a static 9.0 price for all requests.
         assert_eq!(

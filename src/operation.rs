@@ -1,4 +1,4 @@
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Utc};
 use rocket_okapi::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -33,8 +33,8 @@ pub struct BaseOperation {
     #[serde(default)]
     pub fees: f64,
 
-    #[serde(default = "Local::now")]
-    pub time: DateTime<Local>,
+    #[serde(default = "Utc::now")]
+    pub time: DateTime<Utc>,
 
     #[serde(rename = "type")]
     pub kind: OperationKind,
