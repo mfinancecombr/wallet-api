@@ -22,7 +22,7 @@ export const PortfolioList = (props) => (
 );
 
 const PortfolioName = ({ record }) => {
-  return <span>Portfolio {record ? `"${record.name}"` : ""}</span>;
+  return <span>Portfolio {record && record.name}</span>;
 };
 
 export const PortfolioEdit = (props) => (
