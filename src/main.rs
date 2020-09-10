@@ -21,6 +21,7 @@ mod rest;
 mod scheduling;
 mod stock;
 mod walletdb;
+mod x_response_time;
 
 use broker::*;
 use historical::*;
@@ -28,6 +29,7 @@ use portfolio::*;
 use scheduling::Scheduler;
 use stock::*;
 use walletdb::WalletDB;
+use x_response_time::RequestTimer;
 
 fn main() {
     let mut cors = rocket_cors::CorsOptions::default();
@@ -62,6 +64,7 @@ fn main() {
                 ..Default::default()
             }),
         )
+        .attach(RequestTimer)
         .attach(WalletDB::fairing())
         .attach(Scheduler::fairing())
         .attach(cors)
