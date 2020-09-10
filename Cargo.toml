@@ -21,6 +21,7 @@ rocket_okapi = { version = "0.6.0-alpha-1" }
 rocket = { version = "0.4.3", default-features = false }
 serde = "1.0"
 tokio = { version = "0.2", features = ["full"] }
+uuid = { version = "0.8", features = ["v4"] }
 yahoo-finance = { git = "https://github.com/kov/yahoo-finance-rs.git" }
 
 [dev-dependencies]

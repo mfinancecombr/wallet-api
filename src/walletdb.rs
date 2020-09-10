@@ -29,24 +29,29 @@ impl WalletDB {
         ));
     }
 
+    #[cfg(not(test))]
     pub fn get_connection() -> Database {
-        if cfg!(test) {
-            WALLET_CLIENT
-                .lock()
-                .unwrap()
-                .borrow()
-                .as_ref()
-                .unwrap()
-                .database("wallet-fake-test")
-        } else {
-            WALLET_CLIENT
-                .lock()
-                .unwrap()
-                .borrow()
-                .as_ref()
-                .unwrap()
-                .database("wallet")
+        WALLET_CLIENT
+            .lock()
+            .unwrap()
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .database("wallet")
+    }
+
+    #[cfg(test)]
+    pub fn get_connection() -> Database {
+        lazy_static! {
+            static ref NAME: String = format!("wallet-fake-test-{}", uuid::Uuid::new_v4());
         }
+        WALLET_CLIENT
+            .lock()
+            .unwrap()
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .database(&NAME)
     }
 }
 
