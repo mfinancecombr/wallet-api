@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, Local, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
 use mongodb::bson::{doc, from_bson, to_bson, Bson, Document};
 use mongodb::options::FindOneOptions;
 use rayon::prelude::*;
@@ -90,16 +90,12 @@ impl Historical {
     #[tokio::main]
     pub async fn current_price_for_symbol(symbol: String) -> f64 {
         let ysymbol = format!("{}.SA", &symbol);
-        let date_to = Local::today().and_hms(23, 59, 59);
+        let date_to = Utc::today().and_hms(23, 59, 59);
         let date_from = date_to.date().and_hms(0, 0, 0);
-        let bar = history::retrieve_range(
-            &ysymbol,
-            DateTime::<Utc>::from(date_from),
-            Some(DateTime::<Utc>::from(date_to)),
-        )
-        .await
-        .ok()
-        .and_then(|mut bar| bar.pop());
+        let bar = history::retrieve_range(&ysymbol, date_from, Some(date_to))
+            .await
+            .ok()
+            .and_then(|mut bar| bar.pop());
 
         if let Some(bar) = bar {
             bar.close
@@ -147,7 +143,7 @@ async fn do_refresh_for_symbol(symbol: &str) -> WalletResult<()> {
     // Ensure we do not try to refresh the same symbol more than once at a time.
     let _guard = LockMap::lock("historical", symbol);
 
-    let mut since = DateTime::<Utc>::from(Local.ymd(2006, 1, 1).and_hms(0, 0, 0));
+    let mut since = Utc.ymd(2006, 1, 1).and_hms(0, 0, 0);
 
     // First check if we need to override our since constraint, as we may
     // already have downloaded some historical data, and we don't want to
@@ -171,7 +167,7 @@ async fn do_refresh_for_symbol(symbol: &str) -> WalletResult<()> {
 
     // Limit the range to yesterday, so we don't keep adding several times for
     // today in case we get called multiple times.
-    let yesterday = DateTime::<Utc>::from(Local::today().and_hms(23, 59, 59) - Duration::days(1));
+    let yesterday = Utc::today().and_hms(23, 59, 59) - Duration::days(1);
     if yesterday < since || yesterday.date() == since.date() {
         return Ok(());
     }
@@ -252,7 +248,7 @@ mod tests {
 
         // Delete the last year.
         let filter = doc! {
-            "time": { "$gt": format!("{}-1-1", Local::today().year() - 1) }
+            "time": { "$gt": format!("{}-1-1", Utc::today().year() - 1) }
         };
         collection
             .delete_many(filter, None)
