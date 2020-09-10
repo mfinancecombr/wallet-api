@@ -24,6 +24,30 @@ macro_rules! dang {
     };
 }
 
+impl From<mongodb::error::Error> for BackendError {
+    fn from(error: mongodb::error::Error) -> Self {
+        dang!(Database, error)
+    }
+}
+
+impl From<mongodb::bson::de::Error> for BackendError {
+    fn from(error: mongodb::bson::de::Error) -> Self {
+        dang!(Bson, error)
+    }
+}
+
+impl From<mongodb::bson::ser::Error> for BackendError {
+    fn from(error: mongodb::bson::ser::Error) -> Self {
+        dang!(Bson, error)
+    }
+}
+
+impl From<std::option::NoneError> for BackendError {
+    fn from(error: std::option::NoneError) -> Self {
+        dang!(Bson, error)
+    }
+}
+
 impl Responder<'static> for BackendError {
     fn respond_to(self, _: &Request) -> Result<Response<'static>, Status> {
         let body;

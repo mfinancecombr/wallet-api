@@ -113,12 +113,7 @@ async fn do_calculate_for_symbol(symbol: String) -> WalletResult<Position> {
     };
 
     let options = FindOptions::builder().sort(doc! { "time": 1 });
-    let cursor = match collection.find(filter, options.build()) {
-        Ok(cursor) => cursor,
-        Err(e) => {
-            return Err(dang!(Database, e));
-        }
-    };
+    let cursor = collection.find(filter, options.build())?;
 
     let mut references = Vec::<Position>::new();
     for document in cursor {
