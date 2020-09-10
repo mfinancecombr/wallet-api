@@ -31,10 +31,9 @@ pub struct BaseOperation {
     #[serde(rename = "type")]
     pub kind: OperationKind,
 
-    #[serde(default = "default_broker")]
-    pub broker: String,
+    pub broker: Option<String>,
 
-    #[serde(default = "default_portfolio")]
+    #[serde(default = "Vec::<String>::new")]
     pub portfolios: Vec<String>,
 }
 
@@ -42,14 +41,6 @@ impl Queryable for BaseOperation {
     fn collection_name() -> &'static str {
         "operations"
     }
-}
-
-fn default_broker() -> String {
-    "default".to_string()
-}
-
-fn default_portfolio() -> Vec<String> {
-    vec!["default".to_string()]
 }
 
 pub fn get_distinct_symbols() -> WalletResult<Vec<String>> {

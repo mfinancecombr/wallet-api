@@ -317,8 +317,8 @@ mod tests {
                 asset_kind: AssetKind::Stock,
                 operation: BaseOperation {
                     kind: OperationKind::Purchase,
-                    broker: String::from("FakeTestBroker"),
-                    portfolios: vec![String::from("FakeTestWallet")],
+                    broker: None,
+                    portfolios: Vec::<String>::new(),
                     price: 10.0,
                     quantity: 100,
                     fees: 0.0,
