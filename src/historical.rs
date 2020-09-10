@@ -283,5 +283,9 @@ mod tests {
             .count_documents(None, None)
             .expect("Count failed");
         assert_eq!(count, original_count);
+
+        if let Err(e) = db.drop(None) {
+            println!("Failed to drop test db {}", format!("{:?}", e));
+        }
     }
 }

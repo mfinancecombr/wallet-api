@@ -445,5 +445,9 @@ mod tests {
             assert_relative_eq!(*realized, position.realized);
             assert_relative_eq!(*gain, position.gain);
         }
+
+        if let Err(e) = db.drop(None) {
+            println!("Failed to drop test db {}", format!("{:?}", e));
+        }
     }
 }
