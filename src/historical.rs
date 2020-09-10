@@ -126,12 +126,10 @@ impl Historical {
 
         let find_options = FindOneOptions::builder().sort(doc! { "time": -1 });
 
-        let document = historical
-            .find_one(filter, find_options.build())
-            .map_err(|e| dang!(Database, e))?;
+        let document = historical.find_one(filter, find_options.build())?;
 
         if let Some(document) = document {
-            Ok(from_bson::<AssetDay>(Bson::Document(document)).map_err(|e| dang!(Bson, e))?)
+            Ok(from_bson::<AssetDay>(Bson::Document(document))?)
         } else {
             Err(BackendError::NotFound)
         }
@@ -201,23 +199,21 @@ async fn do_refresh_for_symbol(symbol: &str) -> WalletResult<()> {
             continue;
         }
 
-        let doc = to_bson(&asset_day).map_err(|e| dang!(Bson, e))?;
+        let doc = match to_bson(&asset_day)? {
+            Bson::Document(doc) => Ok(doc),
+            _ => Err(dang!(Bson, "Could not convert to Document")),
+        }?;
 
-        let doc = doc
-            .as_document()
-            .ok_or_else(|| dang!(Bson, "Could not convert to Document"))?;
-
-        docs.push(doc.clone());
+        docs.push(doc);
     }
 
     if docs.is_empty() {
         return Ok(());
     }
 
-    db.collection("historical")
-        .insert_many(docs, None)
-        .map_err(|e| dang!(Database, e))
-        .map(|_| ())
+    db.collection("historical").insert_many(docs, None)?;
+
+    Ok(())
 }
 
 #[cfg(test)]

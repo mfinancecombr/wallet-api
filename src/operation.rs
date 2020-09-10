@@ -47,9 +47,7 @@ pub fn get_distinct_symbols() -> WalletResult<Vec<String>> {
     let db = WalletDB::get_connection();
     let collection = db.collection("operations");
 
-    let symbols = collection
-        .distinct("symbol", None, None)
-        .map_err(|e| dang!(Database, e))?;
+    let symbols = collection.distinct("symbol", None, None)?;
 
     symbols
         .iter()

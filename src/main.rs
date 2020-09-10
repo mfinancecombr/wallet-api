@@ -1,5 +1,5 @@
 #![warn(clippy::all)]
-#![feature(proc_macro_hygiene, decl_macro, async_closure)]
+#![feature(proc_macro_hygiene, decl_macro, async_closure, try_trait)]
 
 #[macro_use]
 extern crate lazy_static;

@@ -75,10 +75,7 @@ pub trait Queryable: Serialize + DeserializeOwned + std::fmt::Debug {
 
     fn from_docs(cursor: Cursor) -> WalletResult<Vec<Self>> {
         cursor
-            .map(|result| match result {
-                Ok(doc) => Self::from_doc(doc),
-                Err(e) => Err(dang!(Database, e)),
-            })
+            .map(|result| result.map(Self::from_doc)?)
             .collect::<WalletResult<Vec<Self>>>()
     }
 
@@ -95,10 +92,8 @@ pub trait Queryable: Serialize + DeserializeOwned + std::fmt::Debug {
             };
         }
 
-        match from_bson(Bson::Document(doc)) {
-            Ok(obj) => Ok(obj),
-            Err(e) => Err(dang!(Bson, e)),
-        }
+        let obj = from_bson(Bson::Document(doc))?;
+        Ok(obj)
     }
 
     fn to_doc(&self) -> WalletResult<Document> {
@@ -112,16 +107,14 @@ pub trait Queryable: Serialize + DeserializeOwned + std::fmt::Debug {
             }
         }
 
-        match to_bson(self) {
-            Ok(doc) => match doc {
-                Bson::Document(mut doc) => {
-                    fix_id(&mut doc);
-                    Ok(doc)
-                }
-                _ => Err(dang!(Bson, "Failed to create Document")),
-            },
-            Err(e) => Err(dang!(Bson, e)),
-        }
+        let doc = match to_bson(self)? {
+            Bson::Document(mut doc) => {
+                fix_id(&mut doc);
+                Ok(doc)
+            }
+            _ => Err(dang!(Bson, "Failed to create Document")),
+        }?;
+        Ok(doc)
     }
 }
 
@@ -130,13 +123,9 @@ where
     T: Queryable,
 {
     let wallet = WalletDB::get_connection();
-    let cursor = match wallet
+    let cursor = wallet
         .collection(T::collection_name())
-        .find(filter, options)
-    {
-        Ok(cursor) => cursor,
-        Err(e) => return Err(dang!(Database, e)),
-    };
+        .find(filter, options)?;
     T::from_docs(cursor)
 }
 
@@ -145,10 +134,10 @@ where
     T: Queryable,
 {
     let wallet = WalletDB::get_connection();
-    wallet
+    let count = wallet
         .collection(T::collection_name())
-        .count_documents(None, None)
-        .map_err(|e| dang!(Database, e))
+        .count_documents(None, None)?;
+    Ok(count)
 }
 
 fn string_to_objectid(oid: &str) -> Result<oid::ObjectId, oid::Error> {
@@ -174,13 +163,11 @@ where
     T: Queryable,
 {
     let wallet = WalletDB::get_connection();
-    match wallet
+    let doc = wallet
         .collection(T::collection_name())
-        .find_one(Some(filter_from_oid(&oid)), None)
-    {
-        Ok(doc) => doc.map_or(Err(BackendError::NotFound), T::from_doc),
-        Err(e) => Err(dang!(Database, e)),
-    }
+        .find_one(Some(filter_from_oid(&oid)), None)?
+        .map_or(Err(BackendError::NotFound), T::from_doc)?;
+    Ok(doc)
 }
 
 pub fn insert_one<T>(obj: T) -> WalletResult<T>
@@ -194,13 +181,12 @@ where
     doc.remove("_id");
 
     let wallet = WalletDB::get_connection();
-    match wallet
+    let inserted = wallet
         .collection(T::collection_name())
-        .insert_one(doc, None)
-    {
-        Ok(result) => get_one(objectid_to_string(result.inserted_id)?),
-        Err(e) => Err(dang!(Database, e)),
-    }
+        .insert_one(doc, None)?;
+
+    let result = get_one(objectid_to_string(inserted.inserted_id)?)?;
+    Ok(result)
 }
 
 pub fn update_one<T>(oid: String, obj: T) -> WalletResult<T>
@@ -213,14 +199,14 @@ where
     doc.remove("_id");
 
     let wallet = WalletDB::get_connection();
-    match wallet.collection(T::collection_name()).update_one(
+    wallet.collection(T::collection_name()).update_one(
         filter_from_oid(&oid),
         doc! {"$set": doc},
         None,
-    ) {
-        Ok(_) => get_one(oid),
-        Err(e) => Err(dang!(Database, e)),
-    }
+    )?;
+
+    let result = get_one(oid)?;
+    Ok(result)
 }
 
 pub fn delete_one<T>(oid: String) -> WalletResult<T>
@@ -229,11 +215,8 @@ where
 {
     let result = get_one::<T>(oid.clone())?;
     let wallet = WalletDB::get_connection();
-    match wallet
+    wallet
         .collection(T::collection_name())
-        .delete_one(filter_from_oid(&oid), None)
-    {
-        Ok(_) => Ok(result),
-        Err(e) => Err(dang!(Database, e)),
-    }
+        .delete_one(filter_from_oid(&oid), None)?;
+    Ok(result)
 }
