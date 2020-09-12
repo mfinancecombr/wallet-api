@@ -15,10 +15,59 @@ pub struct Portfolio {
     pub name: String,
 }
 
+/// # List positions
+///
+/// Lists all positions
 #[openapi]
-#[get("/portfolios/<oid>/position")]
-pub fn portfolio_position(oid: String) -> WalletResult<Json<Vec<Position>>> {
-    Position::get_all_for_portfolio(Some(oid)).map(Json)
+#[get("/positions?<options..>")]
+pub fn positions(options: Option<Form<ListingOptions>>) -> WalletResult<Rest<Json<Vec<Position>>>> {
+    get_portfolio_positions(None, options)
+}
+
+#[openapi]
+#[get("/portfolios/positions?<id>&<options..>")]
+pub fn portfolio_positions(
+    id: String,
+    options: Option<Form<ListingOptions>>,
+) -> WalletResult<Rest<Json<Vec<Position>>>> {
+    get_portfolio_positions(Some(id), options)
+}
+
+fn get_portfolio_positions(
+    id: Option<String>,
+    options: Option<Form<ListingOptions>>,
+) -> WalletResult<Rest<Json<Vec<Position>>>> {
+    let result = Position::get_all_for_portfolio(id)?;
+    let count = result.len();
+    if let Some(options) = options {
+        let start = std::cmp::min(options._start.unwrap_or(0) as usize, count as usize);
+        let end = std::cmp::min(options._end.unwrap_or(10) as usize, count as usize);
+
+        let mut result = (&result[start..end]).to_vec();
+        if let Some(sort) = options._sort.as_ref() {
+            match sort.as_str() {
+                "id" => result.sort_by(Position::cmp_id),
+                "symbol" => result.sort_by(Position::cmp_symbol),
+                "quantity" => result.sort_by(Position::cmp_quantity),
+                "average_price" => result.sort_by(Position::cmp_average_price),
+                "current_price" => result.sort_by(Position::cmp_current_price),
+                "cost_basis" => result.sort_by(Position::cmp_cost_basis),
+                "current_value" => result.sort_by(Position::cmp_current_value),
+                "gain" => result.sort_by(Position::cmp_gain),
+                _ => unimplemented!(),
+            }
+        }
+
+        if let Some(order) = options._order.as_ref() {
+            if let "DESC" = order.as_str() {
+                result.reverse();
+            }
+        }
+
+        Ok(Rest(Json(result), count))
+    } else {
+        Ok(Rest(Json(result), count))
+    }
 }
 
 impl Queryable for Portfolio {

@@ -60,13 +60,15 @@ fn main() {
                 // Historical
                 refresh_historicals,
                 refresh_historical_for_symbol,
+                // Position
+                positions,
                 // Portfolio
                 add_portfolio,
                 get_portfolios,
                 get_portfolio_by_oid,
                 update_portfolio_by_oid,
                 delete_portfolio_by_oid,
-                portfolio_position,
+                portfolio_positions,
             ],
         )
         .mount(

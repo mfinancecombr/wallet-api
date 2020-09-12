@@ -1,6 +1,6 @@
 use chrono::{Date, DateTime, Datelike, Duration, TimeZone, Utc, Weekday};
 use log::{debug, info, warn};
-use mongodb::bson::{doc, from_bson, Bson};
+use mongodb::bson::{doc, Bson};
 use mongodb::options::{FindOneOptions, FindOptions};
 use rayon::prelude::*;
 use rocket_okapi::JsonSchema;
@@ -17,6 +17,8 @@ use crate::walletdb::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct Position {
+    #[serde(alias = "_id")]
+    pub id: Option<String>,
     pub symbol: String,
     pub average_price: f64,
     pub cost_basis: f64,
@@ -32,6 +34,7 @@ pub struct Position {
 impl Position {
     fn new(symbol: &str, portfolio_oid: Option<String>) -> Self {
         Position {
+            id: None,
             symbol: symbol.to_string(),
             cost_basis: 0.0,
             quantity: 0,
@@ -43,6 +46,51 @@ impl Position {
             sales: Vec::<Sale>::new(),
             portfolio: portfolio_oid,
         }
+    }
+
+    pub fn cmp_symbol(a: &Position, b: &Position) -> std::cmp::Ordering {
+        a.symbol.cmp(&b.symbol)
+    }
+
+    pub fn cmp_id(a: &Position, b: &Position) -> std::cmp::Ordering {
+        a.id.cmp(&b.id)
+    }
+
+    pub fn cmp_quantity(a: &Position, b: &Position) -> std::cmp::Ordering {
+        a.quantity.partial_cmp(&b.quantity).unwrap()
+    }
+
+    pub fn float_cmp(a: &f64, b: &f64) -> std::cmp::Ordering {
+        match (a.is_nan(), b.is_nan()) {
+            (true, true) => std::cmp::Ordering::Equal,
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            (false, false) => a.partial_cmp(&b).unwrap(),
+        }
+    }
+
+    pub fn cmp_average_price(a: &Position, b: &Position) -> std::cmp::Ordering {
+        Position::float_cmp(&a.average_price, &b.average_price)
+    }
+
+    pub fn cmp_current_price(a: &Position, b: &Position) -> std::cmp::Ordering {
+        Position::float_cmp(&a.current_price, &b.current_price)
+    }
+
+    pub fn cmp_cost_basis(a: &Position, b: &Position) -> std::cmp::Ordering {
+        Position::float_cmp(&a.cost_basis, &b.cost_basis)
+    }
+
+    pub fn cmp_current_value(a: &Position, b: &Position) -> std::cmp::Ordering {
+        Position::float_cmp(
+            &(a.current_price * a.quantity as f64),
+            &(b.current_price * b.quantity as f64),
+        )
+    }
+
+    pub fn cmp_gain(a: &Position, b: &Position) -> std::cmp::Ordering {
+        // The web UI shows gain as a percentage.
+        Position::float_cmp(&(a.gain / a.cost_basis), &(b.gain / b.cost_basis))
     }
 }
 
@@ -100,7 +148,6 @@ async fn do_calculate_for_symbol(
             pos
         })
         .unwrap_or_else(|| Position::new(&symbol, portfolio_oid.clone()));
-
     let mut filter = doc! {
         "$and": [
             { "symbol": &symbol },
@@ -212,8 +259,11 @@ impl Position {
         let options = FindOneOptions::builder().sort(doc! { "time": -1 }).build();
 
         if let Ok(doc) = collection.find_one(filter, options) {
-            doc.map(|doc| from_bson(Bson::Document(doc)).ok())
-                .unwrap_or(None)
+            if let Some(doc) = doc {
+                Position::from_doc(doc).ok()
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -256,11 +306,28 @@ impl Position {
             .into_par_iter()
             .try_for_each::<_, WalletResult<_>>(|symbol| {
                 let position = Position::calculate_for_symbol(&symbol, oid.clone())?;
-                positions.lock().unwrap().push(position);
+
+                // Old positions will show up here. Maybe we will want to include them
+                // for future views and need a parameter for this function, but for now
+                // just ignore them.
+                if position.quantity > 0 {
+                    positions.lock().unwrap().push(position);
+                }
+
                 Ok(())
             })?;
 
-        Ok(positions.into_inner().unwrap())
+        let mut positions = positions.into_inner().unwrap();
+
+        // The react-admin query interface expects to find ids, but we did not
+        // necessarily get these from the database. So we make up fake ids.
+        for (count, position) in positions.iter_mut().enumerate() {
+            position.id = Some(count.to_string());
+        }
+
+        positions.sort_unstable_by(|a, b| a.symbol.partial_cmp(&b.symbol).unwrap());
+
+        Ok(positions)
     }
 
     pub fn create_snapshots(symbol: &str, mut references: Vec<Position>) -> WalletResult<()> {
@@ -431,6 +498,7 @@ mod tests {
         assert_eq!(
             position,
             Position {
+                id: position.id.clone(),
                 symbol,
                 average_price: 8.0,
                 cost_basis: 1200.0,

@@ -39,10 +39,10 @@ where
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, JsonSchema, FromForm)]
 pub struct ListingOptions {
-    _start: Option<i64>,
-    _end: Option<i64>,
-    _order: Option<String>,
-    _sort: Option<String>,
+    pub _start: Option<i64>,
+    pub _end: Option<i64>,
+    pub _order: Option<String>,
+    pub _sort: Option<String>,
 }
 
 pub fn api_add<T>(operation: Json<T>) -> WalletResult<Json<T>>
