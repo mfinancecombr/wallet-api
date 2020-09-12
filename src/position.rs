@@ -26,10 +26,11 @@ pub struct Position {
     pub gain: f64,
     pub realized: f64,
     pub sales: Vec<Sale>,
+    pub portfolio: Option<String>,
 }
 
 impl Position {
-    fn new(symbol: &str) -> Self {
+    fn new(symbol: &str, portfolio_oid: Option<String>) -> Self {
         Position {
             symbol: symbol.to_string(),
             cost_basis: 0.0,
@@ -40,6 +41,7 @@ impl Position {
             gain: 0.0,
             realized: 0.0,
             sales: Vec::<Sale>::new(),
+            portfolio: portfolio_oid,
         }
     }
 }
@@ -76,7 +78,10 @@ fn find_all_fridays_between(from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Date<
 }
 
 #[tokio::main]
-async fn do_calculate_for_symbol(symbol: String) -> WalletResult<Position> {
+async fn do_calculate_for_symbol(
+    symbol: String,
+    portfolio_oid: Option<String>,
+) -> WalletResult<Position> {
     // Ensure we do not try to calculate for the same symbol more than once at a time.
     // Create it here so it is locked even before the thread gets to run, to avoid
     // races with callers of this function or multiple calls of this function.
@@ -89,14 +94,14 @@ async fn do_calculate_for_symbol(symbol: String) -> WalletResult<Position> {
 
     // If we already have a bunch of position snapshots, we pick up
     // from the last one rather than starting from scratch.
-    let mut position = Position::last(&symbol)
+    let mut position = Position::last(&symbol, portfolio_oid.clone())
         .map(|pos| {
             date_from = pos.time.with_timezone(&Utc);
             pos
         })
-        .unwrap_or_else(|| Position::new(&symbol));
+        .unwrap_or_else(|| Position::new(&symbol, portfolio_oid.clone()));
 
-    let filter = doc! {
+    let mut filter = doc! {
         "$and": [
             { "symbol": &symbol },
             {
@@ -111,6 +116,15 @@ async fn do_calculate_for_symbol(symbol: String) -> WalletResult<Position> {
             }
         ]
     };
+
+    if let Some(portfolio_oid) = portfolio_oid {
+        filter
+            .get_array_mut("$and")
+            .unwrap()
+            .push(Bson::Document(doc! {
+                "detail.portfolios": portfolio_oid
+            }));
+    }
 
     let options = FindOptions::builder().sort(doc! { "time": 1 });
     let cursor = collection.find(filter, options.build())?;
@@ -180,11 +194,21 @@ async fn do_calculate_for_symbol(symbol: String) -> WalletResult<Position> {
 }
 
 impl Position {
-    pub fn last(symbol: &str) -> Option<Self> {
+    pub fn last(symbol: &str, portfolio_oid: Option<String>) -> Option<Self> {
         let db = WalletDB::get_connection();
         let collection = db.collection(Position::collection_name());
 
-        let filter = doc! { "symbol": symbol.to_string() };
+        let filter = if let Some(portfolio_oid) = portfolio_oid {
+            doc! {
+                "$and": [
+                    { "symbol": symbol.to_string() },
+                    { "portfolio": portfolio_oid }
+                ]
+            }
+        } else {
+            doc! { "symbol": symbol.to_string() }
+        };
+
         let options = FindOneOptions::builder().sort(doc! { "time": -1 }).build();
 
         if let Ok(doc) = collection.find_one(filter, options) {
@@ -195,7 +219,10 @@ impl Position {
         }
     }
 
-    pub fn calculate_for_symbol(symbol: &str) -> WalletResult<Position> {
+    pub fn calculate_for_symbol(
+        symbol: &str,
+        portfolio_oid: Option<String>,
+    ) -> WalletResult<Position> {
         // Ensure we do not try to calculate for the same symbol more than once at a time.
         let _guard = LockMap::lock(Event::collection_name(), symbol);
 
@@ -205,9 +232,10 @@ impl Position {
             std::thread::spawn(move || Historical::current_price_for_symbol(ysymbol));
 
         let dsymbol = symbol.to_string();
-        let mut position = std::thread::spawn(move || do_calculate_for_symbol(dsymbol))
-            .join()
-            .unwrap()?;
+        let mut position =
+            std::thread::spawn(move || do_calculate_for_symbol(dsymbol, portfolio_oid))
+                .join()
+                .unwrap()?;
 
         let current_price = current_price.join().unwrap();
         position.current_price = current_price;
@@ -217,13 +245,17 @@ impl Position {
     }
 
     pub fn calculate_all() -> WalletResult<Vec<Position>> {
+        Position::get_all_for_portfolio(None)
+    }
+
+    pub fn get_all_for_portfolio(oid: Option<String>) -> WalletResult<Vec<Position>> {
         let positions = Mutex::new(Vec::<Position>::new());
 
-        let symbols = get_distinct_symbols()?;
+        let symbols = get_distinct_symbols(oid.clone())?;
         symbols
             .into_par_iter()
             .try_for_each::<_, WalletResult<_>>(|symbol| {
-                let position = Position::calculate_for_symbol(&symbol)?;
+                let position = Position::calculate_for_symbol(&symbol, oid.clone())?;
                 positions.lock().unwrap().push(position);
                 Ok(())
             })?;
@@ -280,6 +312,7 @@ mod tests {
 
     use super::*;
     use crate::operation::{AssetKind, BaseOperation, OperationKind};
+    use crate::portfolio::Portfolio;
     use crate::stock::StockOperation;
 
     #[test]
@@ -343,11 +376,20 @@ mod tests {
             assert!(insert_one(event.clone()).is_ok(), true);
         }
 
+        let portfolio = insert_one(Portfolio {
+            id: None,
+            name: "FakePortfolio".to_string(),
+        })
+        .expect("Failed to insert Portfolio");
+
         {
             let operation = event.detail.borrow_mut();
             event.time = Utc.ymd(2020, 3, 1).and_hms(12, 0, 0);
             operation.price = 4.0;
             operation.kind = OperationKind::Purchase;
+            operation
+                .portfolios
+                .push(portfolio.id.as_ref().unwrap().clone());
 
             assert!(insert_one(event.clone()).is_ok(), true);
         }
@@ -367,11 +409,11 @@ mod tests {
         // existing reference.
         Position::calculate_all().expect("Something went wrong");
 
-        let position = Position::calculate_for_symbol("FAKE4");
+        let position = Position::calculate_for_symbol("FAKE4", None);
         assert_eq!(position.is_ok(), true);
         let position = position.unwrap();
 
-        let same_position = Position::calculate_for_symbol("FAKE4");
+        let same_position = Position::calculate_for_symbol("FAKE4", None);
         assert_eq!(same_position.is_ok(), true);
         let same_position = same_position.unwrap();
 
@@ -398,8 +440,13 @@ mod tests {
                 gain: 150.0,
                 realized: 100.0,
                 sales,
+                portfolio: None,
             }
         );
+
+        // Ensure create_snapshots finished.
+        let guard = LockMap::lock(Position::collection_name(), "FAKE4");
+        drop(guard);
 
         let collection = db.collection(Position::collection_name());
 
@@ -442,6 +489,30 @@ mod tests {
             assert_relative_eq!(*realized, position.realized);
             assert_relative_eq!(*gain, position.gain);
         }
+
+        let position = Position::calculate_for_symbol("FAKE4", portfolio.id.clone());
+        assert_eq!(position.is_ok(), true);
+
+        // Wait for create_snapshots to finish.
+        let guard = LockMap::lock(Position::collection_name(), "FAKE4");
+        drop(guard);
+
+        // Make sure snapshots were created for the portfolio as well.
+        let filter = doc! {
+            "$and": [
+                { "time": { "$lt": "2020-04-04" } },
+                { "portfolio": portfolio.id.unwrap() }
+            ]
+        };
+
+        let positions = collection
+            .find(Some(filter), None)
+            .map(|cursor| Position::from_docs(cursor).expect("Failed to convert document"))
+            .expect("Failed to query positions collection");
+
+        // This portfolio should have fewer entries, since its first operation
+        // is from March 1st.
+        assert_eq!(positions.len(), 5);
 
         if let Err(e) = db.drop(None) {
             println!("Failed to drop test db {}", format!("{:?}", e));

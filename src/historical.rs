@@ -74,7 +74,7 @@ pub struct Historical {}
 
 impl Historical {
     pub fn refresh_all() -> WalletResult<()> {
-        let symbols = get_distinct_symbols()?;
+        let symbols = get_distinct_symbols(None)?;
 
         symbols
             .into_par_iter()

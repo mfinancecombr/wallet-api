@@ -25,5 +25,5 @@ pub struct StockOperation {
 #[openapi]
 #[get("/stocks/position/<symbol>")]
 pub fn get_stock_position_by_symbol(symbol: String) -> WalletResult<Json<Position>> {
-    Position::calculate_for_symbol(&symbol).map(Json)
+    Position::calculate_for_symbol(&symbol, None).map(Json)
 }
