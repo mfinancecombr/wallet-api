@@ -249,14 +249,16 @@ impl Position {
     }
 
     pub fn create_snapshots(symbol: &str, mut references: Vec<Position>) -> WalletResult<()> {
-        info!("[{}] saving Position snapshots", symbol);
+        info_!("[{}] saving Position snapshots", symbol);
 
         let mut previous_position: Option<Position> = None;
         for position in &mut references {
             if let Some(mut previous_position) = previous_position {
-                info!(
+                info_!(
                     "[{}] generating snapshots for range {:?} -> {:?}",
-                    symbol, previous_position.time, position.time
+                    symbol,
+                    previous_position.time,
+                    position.time
                 );
                 for friday in find_all_fridays_between(previous_position.time, position.time) {
                     let asset_day = Historical::get_for_day_with_fallback(symbol, friday);
@@ -282,7 +284,7 @@ impl Position {
 
             previous_position = Some(position.clone());
         }
-        info!("[{}] done saving Position snapshots", symbol);
+        info_!("[{}] done saving Position snapshots", symbol);
 
         Ok(())
     }

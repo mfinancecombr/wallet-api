@@ -76,19 +76,19 @@ impl Fairing for Scheduler {
 
     fn on_launch(&self, _: &Rocket) {
         std::thread::spawn(move || {
-            info!("=> Starting on-launch full refresh…");
+            info_!("Starting on-launch full refresh…");
 
             if let Err(e) = Historical::refresh_all() {
                 warn!("failed to pre-calculate historicals: {:?}", e);
             }
 
-            info!("=> Done refreshing historicals…");
+            info_!("Done refreshing historicals…");
 
             if let Err(e) = Position::calculate_all() {
                 warn!("failed to pre-calculate positions: {:?}", e);
             }
 
-            info!("=> Done calculating position snapshots. On-launch refresh complete.");
+            info_!("Done calculating position snapshots. On-launch refresh complete.");
         });
 
         self.inner
