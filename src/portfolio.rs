@@ -15,10 +15,37 @@ pub struct Portfolio {
     pub name: String,
 }
 
+/// # List positions
+///
+/// Lists all positions
 #[openapi]
-#[get("/portfolios/<oid>/position")]
-pub fn portfolio_position(oid: String) -> WalletResult<Json<Vec<Position>>> {
-    Position::get_all_for_portfolio(Some(oid)).map(Json)
+#[get("/positions?<options..>")]
+pub fn positions(options: Option<Form<ListingOptions>>) -> WalletResult<Rest<Json<Vec<Position>>>> {
+    get_portfolio_positions(None, options)
+}
+
+#[openapi]
+#[get("/portfolios/positions?<id>&<options..>")]
+pub fn portfolio_positions(
+    id: String,
+    options: Option<Form<ListingOptions>>,
+) -> WalletResult<Rest<Json<Vec<Position>>>> {
+    get_portfolio_positions(Some(id), options)
+}
+
+fn get_portfolio_positions(
+    id: Option<String>,
+    options: Option<Form<ListingOptions>>,
+) -> WalletResult<Rest<Json<Vec<Position>>>> {
+    let result = Position::get_all_for_portfolio(id)?;
+    let count = result.len();
+    if let Some(options) = options {
+        let start = std::cmp::min(options._start.unwrap_or(0) as usize, count as usize);
+        let end = std::cmp::min(options._end.unwrap_or(10) as usize, count as usize);
+        Ok(Rest(Json((&result[start..end]).to_vec()), count))
+    } else {
+        Ok(Rest(Json(result), count))
+    }
 }
 
 impl Queryable for Portfolio {

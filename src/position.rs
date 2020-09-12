@@ -1,6 +1,6 @@
 use chrono::{Date, DateTime, Datelike, Duration, TimeZone, Utc, Weekday};
 use log::{debug, info, warn};
-use mongodb::bson::{doc, from_bson, Bson};
+use mongodb::bson::{doc, Bson};
 use mongodb::options::{FindOneOptions, FindOptions};
 use rayon::prelude::*;
 use rocket_okapi::JsonSchema;
@@ -17,6 +17,8 @@ use crate::walletdb::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct Position {
+    #[serde(alias = "_id")]
+    pub id: Option<String>,
     pub symbol: String,
     pub average_price: f64,
     pub cost_basis: f64,
@@ -32,6 +34,7 @@ pub struct Position {
 impl Position {
     fn new(symbol: &str, portfolio_oid: Option<String>) -> Self {
         Position {
+            id: None,
             symbol: symbol.to_string(),
             cost_basis: 0.0,
             quantity: 0,
@@ -100,7 +103,6 @@ async fn do_calculate_for_symbol(
             pos
         })
         .unwrap_or_else(|| Position::new(&symbol, portfolio_oid.clone()));
-
     let mut filter = doc! {
         "$and": [
             { "symbol": &symbol },
@@ -212,8 +214,11 @@ impl Position {
         let options = FindOneOptions::builder().sort(doc! { "time": -1 }).build();
 
         if let Ok(doc) = collection.find_one(filter, options) {
-            doc.map(|doc| from_bson(Bson::Document(doc)).ok())
-                .unwrap_or(None)
+            if let Some(doc) = doc {
+                Position::from_doc(doc).ok()
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -260,7 +265,17 @@ impl Position {
                 Ok(())
             })?;
 
-        Ok(positions.into_inner().unwrap())
+        let mut positions = positions.into_inner().unwrap();
+
+        // The react-admin query interface expects to find ids, but we did not
+        // necessarily get these from the database. So we make up fake ids.
+        for (count, position) in positions.iter_mut().enumerate() {
+            position.id = Some(count.to_string());
+        }
+
+        positions.sort_unstable_by(|a, b| a.symbol.partial_cmp(&b.symbol).unwrap());
+
+        Ok(positions)
     }
 
     pub fn create_snapshots(symbol: &str, mut references: Vec<Position>) -> WalletResult<()> {
@@ -431,6 +446,7 @@ mod tests {
         assert_eq!(
             position,
             Position {
+                id: position.id.clone(),
                 symbol,
                 average_price: 8.0,
                 cost_basis: 1200.0,
