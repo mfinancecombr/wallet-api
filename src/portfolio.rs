@@ -11,14 +11,14 @@ use crate::walletdb::Queryable;
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Portfolio {
     #[serde(alias = "_id")]
-    id: Option<String>,
-    name: String,
+    pub id: Option<String>,
+    pub name: String,
 }
 
 #[openapi]
-#[post("/portfolio/position")]
-pub fn portfolio_position() -> WalletResult<Json<Vec<Position>>> {
-    Position::calculate_all().map(Json)
+#[get("/portfolios/<oid>/position")]
+pub fn portfolio_position(oid: String) -> WalletResult<Json<Vec<Position>>> {
+    Position::get_all_for_portfolio(Some(oid)).map(Json)
 }
 
 impl Queryable for Portfolio {

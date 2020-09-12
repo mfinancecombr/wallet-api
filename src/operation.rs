@@ -1,3 +1,4 @@
+use mongodb::bson::doc;
 use rocket_okapi::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -43,11 +44,17 @@ impl Queryable for BaseOperation {
     }
 }
 
-pub fn get_distinct_symbols() -> WalletResult<Vec<String>> {
+pub fn get_distinct_symbols(oid: Option<String>) -> WalletResult<Vec<String>> {
     let db = WalletDB::get_connection();
     let collection = db.collection("operations");
 
-    let symbols = collection.distinct("symbol", None, None)?;
+    let filter = oid.map(|oid| {
+        doc! {
+            "portfolios": &oid
+        }
+    });
+
+    let symbols = collection.distinct("symbol", filter, None)?;
 
     symbols
         .iter()
