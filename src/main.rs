@@ -72,7 +72,7 @@ fn main() {
         .mount(
             "/swagger-ui/",
             make_swagger_ui(&SwaggerUIConfig {
-                url: "../openapi.json".to_owned(),
+                url: "../api/v1/openapi.json".to_owned(),
                 ..Default::default()
             }),
         )
