@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use yahoo_finance::{history, Bar};
 
 use crate::error::{BackendError, WalletResult};
-use crate::operation::get_distinct_symbols;
+use crate::event::get_distinct_symbols;
 use crate::scheduling::LockMap;
 use crate::walletdb::{Queryable, WalletDB};
 
@@ -74,7 +74,7 @@ pub struct Historical {}
 
 impl Historical {
     pub fn refresh_all() -> WalletResult<()> {
-        let symbols = get_distinct_symbols()?;
+        let symbols = get_distinct_symbols(None)?;
 
         symbols
             .into_par_iter()

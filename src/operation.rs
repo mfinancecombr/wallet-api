@@ -1,9 +1,9 @@
+use mongodb::bson::doc;
 use rocket_okapi::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
-use crate::error::{BackendError, WalletResult};
-use crate::walletdb::{Queryable, WalletDB};
+use crate::walletdb::Queryable;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -41,20 +41,4 @@ impl Queryable for BaseOperation {
     fn collection_name() -> &'static str {
         "operations"
     }
-}
-
-pub fn get_distinct_symbols() -> WalletResult<Vec<String>> {
-    let db = WalletDB::get_connection();
-    let collection = db.collection("operations");
-
-    let symbols = collection.distinct("symbol", None, None)?;
-
-    symbols
-        .iter()
-        .map(|s| {
-            s.as_str()
-                .ok_or_else(|| dang!(Bson, "Failure converting string (symbol)"))
-                .map(|s| s.to_string())
-        })
-        .collect::<WalletResult<Vec<String>>>()
 }

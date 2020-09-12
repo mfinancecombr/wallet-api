@@ -1,13 +1,14 @@
 use chrono::{DateTime, Utc};
+use mongodb::bson::doc;
 use rocket::request::Form;
 use rocket_contrib::json::Json;
 use rocket_okapi::{openapi, JsonSchema};
 use serde::{Deserialize, Serialize};
 
-use crate::error::WalletResult;
+use crate::error::{BackendError, WalletResult};
 use crate::rest::*;
 use crate::stock::StockOperation;
-use crate::walletdb::Queryable;
+use crate::walletdb::{Queryable, WalletDB};
 
 #[cfg(test)]
 use crate::operation::BaseOperation;
@@ -91,4 +92,26 @@ pub fn update_event_by_oid(oid: String, event: Json<Event>) -> WalletResult<Json
 #[delete("/events/<oid>")]
 pub fn delete_event_by_oid(oid: String) -> WalletResult<Json<Event>> {
     api_delete::<Event>(oid)
+}
+
+pub fn get_distinct_symbols(oid: Option<String>) -> WalletResult<Vec<String>> {
+    let db = WalletDB::get_connection();
+    let collection = db.collection("events");
+
+    let filter = oid.map(|oid| {
+        doc! {
+            "detail.portfolios": &oid
+        }
+    });
+
+    let symbols = collection.distinct("symbol", filter, None)?;
+
+    symbols
+        .iter()
+        .map(|s| {
+            s.as_str()
+                .ok_or_else(|| dang!(Bson, "Failure converting string (symbol)"))
+                .map(|s| s.to_string())
+        })
+        .collect::<WalletResult<Vec<String>>>()
 }
