@@ -4,18 +4,39 @@ import {
   Datagrid,
   Edit,
   Create,
+  Show,
   SimpleForm,
+  SimpleShowLayout,
+  ReferenceManyField,
   TextField,
   EditButton,
+  ShowButton,
   TextInput,
 } from "react-admin";
-import BookIcon from "@material-ui/icons/Book";
-export const PortfolioIcon = BookIcon;
+import { PositionDataGrid } from "./Positions";
+
+export const PortfolioShow = (props) => {
+  return (
+    <Show {...props}>
+      <SimpleShowLayout>
+        <TextField source="name" />
+        <ReferenceManyField
+          reference="portfolios/positions"
+          target="id"
+          label="Positions"
+        >
+          <PositionDataGrid />
+        </ReferenceManyField>
+      </SimpleShowLayout>
+    </Show>
+  );
+};
 
 export const PortfolioList = (props) => (
   <List {...props}>
     <Datagrid>
       <TextField source="name" />
+      <ShowButton basePath="/portfolios" />
       <EditButton basePath="/portfolios" />
     </Datagrid>
   </List>
