@@ -87,18 +87,10 @@ impl Historical {
     }
 
     #[cfg(not(test))]
-    #[tokio::main]
-    pub async fn current_price_for_symbol(symbol: String) -> f64 {
-        let ysymbol = format!("{}.SA", &symbol);
-        let date_to = Utc::today().and_hms(23, 59, 59);
-        let date_from = date_to.date().and_hms(0, 0, 0);
-        let bar = history::retrieve_range(&ysymbol, date_from, Some(date_to))
-            .await
-            .ok()
-            .and_then(|mut bar| bar.pop());
-
-        if let Some(bar) = bar {
-            bar.close
+    pub fn current_price_for_symbol(symbol: String) -> f64 {
+        let asset_day = Historical::get_for_day_with_fallback(&symbol, Utc::today());
+        if let Ok(asset_day) = asset_day {
+            asset_day.close
         } else {
             f64::NAN
         }
