@@ -1,21 +1,23 @@
 import * as React from "react";
 import {
-  List,
-  Datagrid,
-  Edit,
-  Create,
-  SimpleForm,
   ChipField,
+  Create,
+  Datagrid,
   DateField,
+  Edit,
+  EditButton,
+  List,
+  NumberInput,
   ReferenceArrayField,
+  ReferenceArrayInput,
+  ReferenceField,
+  ReferenceInput,
+  SelectArrayInput,
+  SelectInput,
+  SimpleForm,
   SingleFieldList,
   TextField,
-  EditButton,
   TextInput,
-  SelectInput,
-  SelectArrayInput,
-  ReferenceArrayInput,
-  NumberInput,
 } from "react-admin";
 import { DateTimeInput } from "react-admin-date-inputs";
 import { required } from "react-admin";
@@ -29,7 +31,14 @@ export const EventList = (props) => (
       <TextField source="detail.quantity" labe="Quantity" />
       <TextField source="detail.fees" label="Fees" />
       <TextField source="detail.type" label="Type" />
-      <TextField source="detail.broker" label="Broker" />
+      <ReferenceField
+        label="Broker"
+        source="detail.broker"
+        reference="brokers"
+        link={false}
+      >
+        <TextField source="name" label="Type" />
+      </ReferenceField>
       <ReferenceArrayField
         label="Portfolios"
         source="detail.portfolios"
@@ -65,7 +74,9 @@ export const EventEdit = (props) => (
           { id: "sale", name: "Sale" },
         ]}
       />
-      <TextInput label="Broker" source="detail.broker" />
+      <ReferenceInput label="Broker" source="detail.broker" reference="brokers">
+        <SelectInput source="detail.broker" />
+      </ReferenceInput>
       <ReferenceArrayInput
         label="Portfolios"
         source="detail.portfolios"
@@ -104,7 +115,9 @@ export const EventCreate = (props) => (
         ]}
         defaultValue="purchase"
       />
-      <TextInput label="Broker" source="detail.broker" />
+      <ReferenceInput label="Broker" source="detail.broker" reference="brokers">
+        <SelectInput source="detail.broker" />
+      </ReferenceInput>
       <ReferenceArrayInput
         label="Portfolios"
         source="detail.portfolios"
