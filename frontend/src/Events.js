@@ -84,7 +84,7 @@ export const EventCreate = (props) => (
         disabled
         source="eventType"
         validate={required()}
-        defaultValue="Event"
+        defaultValue="StockOperation"
       />
       <DateTimeInput source="time" />
       <TextInput source="symbol" validate={required()} />
