@@ -37,8 +37,11 @@ fn get_portfolio_positions(
     id: Option<String>,
     options: Option<Form<ListingOptions>>,
 ) -> WalletResult<Rest<Json<Vec<Position>>>> {
+    let measure = std::time::Instant::now();
     let result = Position::get_all_for_portfolio(id)?;
     let count = result.len();
+    println!("{}:{} {}", file!(), line!(), measure.elapsed().as_millis());
+
     if let Some(options) = options {
         let start = std::cmp::min(options._start.unwrap_or(0) as usize, count as usize);
         let end = std::cmp::min(options._end.unwrap_or(10) as usize, count as usize);

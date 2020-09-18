@@ -31,14 +31,16 @@ impl LockMap {
             if let Some(guard) = Self::try_lock(collection, symbol) {
                 return guard;
             } else {
+                println!(">>>>> WAITING ON LOCK FOR {} / {}", symbol, collection);
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
         }
     }
 
     pub fn try_lock(collection: &str, symbol: &str) -> Option<LockGuard> {
+        println!(">>>>> WILL LOCK MAP FOR {} / {}", symbol, collection);
         let tuple = (collection.to_string(), symbol.to_string());
-        LOCK_MAP
+        let result = LOCK_MAP
             .lock()
             .map(|mut lock_map| {
                 if lock_map.0.contains(&tuple) {
@@ -48,7 +50,9 @@ impl LockMap {
                     Some(LockGuard(tuple.0, tuple.1))
                 }
             })
-            .expect("Failed to lock static lock map")
+            .expect("Failed to lock static lock map");
+        println!(">>>>> UNLOCKED FOR {} / {}", symbol, collection);
+        result
     }
 
     pub fn unlock(collection: &str, symbol: &str) {

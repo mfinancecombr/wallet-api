@@ -85,6 +85,8 @@ async fn do_calculate_for_symbol(
     symbol: String,
     portfolio_oid: Option<String>,
 ) -> WalletResult<Position> {
+    let measure = std::time::Instant::now();
+
     // Ensure we do not try to calculate for the same symbol more than once at a time.
     // Create it here so it is locked even before the thread gets to run, to avoid
     // races with callers of this function or multiple calls of this function.
@@ -130,6 +132,13 @@ async fn do_calculate_for_symbol(
 
     let options = FindOptions::builder().sort(doc! { "time": 1 });
     let cursor = collection.find(filter, options.build())?;
+    println!(
+        "[{}] {}:{} {}",
+        symbol,
+        file!(),
+        line!(),
+        measure.elapsed().as_millis()
+    );
 
     let mut references = Vec::<Position>::new();
     for document in cursor {
@@ -177,6 +186,13 @@ async fn do_calculate_for_symbol(
             references.push(position.clone());
         }
     }
+    println!(
+        "[{}] {}:{} {}",
+        symbol,
+        file!(),
+        line!(),
+        measure.elapsed().as_millis()
+    );
 
     // Up to here we used the time for the last operation, but we have been asked
     // for the "current" position. We also need to add that to references' last position,
@@ -184,6 +200,7 @@ async fn do_calculate_for_symbol(
     position.time = Utc::now();
     references.push(position.clone());
 
+    let dsymbol = symbol.clone();
     std::thread::spawn(move || {
         let _guard = guard;
         Position::create_snapshots(&symbol, references).map_err(|e| {
@@ -191,6 +208,13 @@ async fn do_calculate_for_symbol(
             e
         })
     });
+    println!(
+        "[{}] {} do_calculate_for_symbol:{} {}",
+        dsymbol,
+        file!(),
+        line!(),
+        measure.elapsed().as_millis()
+    );
 
     Ok(position)
 }
@@ -228,6 +252,8 @@ impl Position {
         symbol: &str,
         portfolio_oid: Option<String>,
     ) -> WalletResult<Position> {
+        let measure = std::time::Instant::now();
+
         // Ensure we do not try to calculate for the same symbol more than once at a time.
         let _guard = LockMap::lock(Event::collection_name(), symbol);
 
@@ -242,9 +268,26 @@ impl Position {
                 .join()
                 .unwrap()?;
 
-        let current_price = current_price.join().unwrap();
-        position.current_price = current_price;
-        position.gain = current_price * position.quantity as f64 - position.cost_basis;
+        // We only care about current price if we still have a position. If not, let's skip this step.
+        if position.quantity > 0 {
+            println!(
+                "[{}] {} WAITING FOR CURRENT PRICE:{} {}",
+                symbol,
+                file!(),
+                line!(),
+                measure.elapsed().as_millis()
+            );
+            let current_price = current_price.join().unwrap();
+            position.current_price = current_price;
+            position.gain = current_price * position.quantity as f64 - position.cost_basis;
+            println!(
+                "[{}] {} calculate_for_symbol:{} {}",
+                symbol,
+                file!(),
+                line!(),
+                measure.elapsed().as_millis()
+            );
+        }
 
         Ok(position)
     }
@@ -254,14 +297,19 @@ impl Position {
     }
 
     pub fn get_all_for_portfolio(oid: Option<String>) -> WalletResult<Vec<Position>> {
+        let measure = std::time::Instant::now();
         let positions = Mutex::new(Vec::<Position>::new());
 
         let symbols = get_distinct_symbols(oid.clone())?;
+        let inflight = std::sync::atomic::AtomicUsize::new(0);
         symbols
             .into_par_iter()
             .try_for_each::<_, WalletResult<_>>(|symbol| {
+                let concurrent = inflight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                println!("CONCURRENT: {}", concurrent + 1);
                 let position = Position::calculate_for_symbol(&symbol, oid.clone())?;
                 positions.lock().unwrap().push(position);
+                inflight.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(())
             })?;
 
@@ -274,6 +322,12 @@ impl Position {
         }
 
         positions.sort_unstable_by(|a, b| a.symbol.partial_cmp(&b.symbol).unwrap());
+        println!(
+            "{} get_all_for_portfolio:{} {}",
+            file!(),
+            line!(),
+            measure.elapsed().as_millis()
+        );
 
         Ok(positions)
     }

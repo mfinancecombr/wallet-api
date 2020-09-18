@@ -12,6 +12,8 @@ use crate::scheduling::LockMap;
 use crate::walletdb::{Queryable, WalletDB};
 
 #[cfg(not(test))]
+use crate::price_cache::PriceCache;
+#[cfg(not(test))]
 use chrono::Date;
 
 #[cfg(test)]
@@ -88,12 +90,20 @@ impl Historical {
 
     #[cfg(not(test))]
     pub fn current_price_for_symbol(symbol: String) -> f64 {
+        if let Some(price) = PriceCache::get_current_price(&symbol) {
+            return price;
+        }
+
         let asset_day = Historical::get_for_day_with_fallback(&symbol, Utc::today());
-        if let Ok(asset_day) = asset_day {
+        let price = if let Ok(asset_day) = asset_day {
             asset_day.close
         } else {
             f64::NAN
-        }
+        };
+
+        PriceCache::update_current_price(symbol, price);
+
+        price
     }
 
     #[cfg(not(test))]
