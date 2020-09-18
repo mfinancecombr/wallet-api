@@ -18,6 +18,7 @@ mod historical;
 mod operation;
 mod portfolio;
 mod position;
+mod price_cache;
 mod rest;
 mod scheduling;
 mod stock;
@@ -28,6 +29,7 @@ use broker::*;
 use event::*;
 use historical::*;
 use portfolio::*;
+use price_cache::PriceCache;
 use scheduling::Scheduler;
 use stock::*;
 use walletdb::WalletDB;
@@ -80,6 +82,7 @@ fn main() {
         )
         .attach(RequestTimer)
         .attach(WalletDB::fairing())
+        .attach(PriceCache::fairing())
         .attach(Scheduler::fairing())
         .attach(cors)
         .launch();

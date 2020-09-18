@@ -39,6 +39,7 @@ fn get_portfolio_positions(
 ) -> WalletResult<Rest<Json<Vec<Position>>>> {
     let result = Position::get_all_for_portfolio(id)?;
     let count = result.len();
+
     if let Some(options) = options {
         let start = std::cmp::min(options._start.unwrap_or(0) as usize, count as usize);
         let end = std::cmp::min(options._end.unwrap_or(10) as usize, count as usize);

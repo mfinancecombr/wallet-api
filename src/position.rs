@@ -281,15 +281,18 @@ impl Position {
         let current_price =
             std::thread::spawn(move || Historical::current_price_for_symbol(ysymbol));
 
-        let dsymbol = symbol.to_string();
+        let symbol = symbol.to_string();
         let mut position =
-            std::thread::spawn(move || do_calculate_for_symbol(dsymbol, portfolio_oid))
+            std::thread::spawn(move || do_calculate_for_symbol(symbol, portfolio_oid))
                 .join()
                 .unwrap()?;
 
-        let current_price = current_price.join().unwrap();
-        position.current_price = current_price;
-        position.gain = current_price * position.quantity as f64 - position.cost_basis;
+        // We only care about current price if we still have a position. If not, let's skip this step.
+        if position.quantity > 0 {
+            let current_price = current_price.join().unwrap();
+            position.current_price = current_price;
+            position.gain = current_price * position.quantity as f64 - position.cost_basis;
+        }
 
         Ok(position)
     }

@@ -38,7 +38,7 @@ impl LockMap {
 
     pub fn try_lock(collection: &str, symbol: &str) -> Option<LockGuard> {
         let tuple = (collection.to_string(), symbol.to_string());
-        LOCK_MAP
+        let result = LOCK_MAP
             .lock()
             .map(|mut lock_map| {
                 if lock_map.0.contains(&tuple) {
@@ -48,7 +48,8 @@ impl LockMap {
                     Some(LockGuard(tuple.0, tuple.1))
                 }
             })
-            .expect("Failed to lock static lock map")
+            .expect("Failed to lock static lock map");
+        result
     }
 
     pub fn unlock(collection: &str, symbol: &str) {
