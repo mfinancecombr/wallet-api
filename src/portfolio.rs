@@ -37,14 +37,10 @@ fn get_portfolio_positions(
     id: Option<String>,
     options: Option<Form<ListingOptions>>,
 ) -> WalletResult<Rest<Json<Vec<Position>>>> {
-    let result = Position::get_all_for_portfolio(id)?;
+    let mut result = Position::get_all_for_portfolio(id)?;
     let count = result.len();
 
     if let Some(options) = options {
-        let start = std::cmp::min(options._start.unwrap_or(0) as usize, count as usize);
-        let end = std::cmp::min(options._end.unwrap_or(10) as usize, count as usize);
-
-        let mut result = (&result[start..end]).to_vec();
         if let Some(sort) = options._sort.as_ref() {
             match sort.as_str() {
                 "id" => result.sort_by(Position::cmp_id),
@@ -64,6 +60,11 @@ fn get_portfolio_positions(
                 result.reverse();
             }
         }
+
+        let start = std::cmp::min(options._start.unwrap_or(0) as usize, count as usize);
+        let end = std::cmp::min(options._end.unwrap_or(10) as usize, count as usize);
+
+        let result = (&result[start..end]).to_vec();
 
         Ok(Rest(Json(result), count))
     } else {
