@@ -13,6 +13,7 @@ use crate::event::{get_distinct_symbols, Event, EventDetail};
 use crate::historical::Historical;
 use crate::operation::OperationKind;
 use crate::scheduling::LockMap;
+use crate::stock::StockSplitKind;
 use crate::walletdb::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
@@ -217,6 +218,16 @@ async fn do_calculate_for_symbol(
                         position.average_price = position.cost_basis / position.quantity as f64;
                     }
                 }
+                EventDetail::StockSplit(split) => match split.split_kind {
+                    StockSplitKind::Split => {
+                        position.quantity *= split.factor;
+                        position.average_price /= split.factor as f64;
+                    }
+                    StockSplitKind::ReverseSplit => {
+                        position.quantity /= split.factor;
+                        position.average_price *= split.factor as f64;
+                    }
+                },
             }
 
             references.push(position.clone());
@@ -383,7 +394,7 @@ mod tests {
     use super::*;
     use crate::operation::{AssetKind, BaseOperation, OperationKind};
     use crate::portfolio::Portfolio;
-    use crate::stock::StockOperation;
+    use crate::stock::{StockOperation, StockSplit};
 
     #[test]
     fn position_calculation() {
@@ -407,30 +418,32 @@ mod tests {
 
         let symbol = String::from("FAKE4");
 
+        let default_operation = EventDetail::StockOperation(StockOperation {
+            asset_kind: AssetKind::Stock,
+            operation: BaseOperation {
+                kind: OperationKind::Purchase,
+                broker: None,
+                portfolios: Vec::<String>::new(),
+                price: 10.0,
+                quantity: 100,
+                fees: 0.0,
+            },
+        });
+
         let mut event = Event {
             id: None,
             symbol: symbol.clone(),
             time: Utc.ymd(2020, 1, 1).and_hms(12, 0, 0),
-            detail: EventDetail::StockOperation(StockOperation {
-                asset_kind: AssetKind::Stock,
-                operation: BaseOperation {
-                    kind: OperationKind::Purchase,
-                    broker: None,
-                    portfolios: Vec::<String>::new(),
-                    price: 10.0,
-                    quantity: 100,
-                    fees: 0.0,
-                },
-            }),
+            detail: default_operation.clone(),
         };
 
         let mut sales = Vec::<Sale>::new();
 
         assert!(insert_one(event.clone()).is_ok(), true);
 
-        {
-            let operation = event.detail.borrow_mut();
-
+        let mut detail = std::mem::replace(&mut event.detail, default_operation.clone());
+        if let EventDetail::StockOperation(operation) = &mut detail {
+            let operation = &mut operation.operation;
             event.time = Utc.ymd(2020, 2, 1).and_hms(12, 0, 0);
             operation.price = 12.0;
             operation.quantity = 50;
@@ -443,6 +456,8 @@ mod tests {
                 sell_price: operation.price,
             });
 
+            event.detail = detail;
+
             assert!(insert_one(event.clone()).is_ok(), true);
         }
 
@@ -452,8 +467,9 @@ mod tests {
         })
         .expect("Failed to insert Portfolio");
 
-        {
-            let operation = event.detail.borrow_mut();
+        let mut detail = std::mem::replace(&mut event.detail, default_operation.clone());
+        if let EventDetail::StockOperation(operation) = &mut detail {
+            let operation = &mut operation.operation;
             event.time = Utc.ymd(2020, 3, 1).and_hms(12, 0, 0);
             operation.price = 4.0;
             operation.kind = OperationKind::Purchase;
@@ -461,15 +477,33 @@ mod tests {
                 .portfolios
                 .push(portfolio.id.as_ref().unwrap().clone());
 
+            event.detail = detail;
+
             assert!(insert_one(event.clone()).is_ok(), true);
         }
 
-        {
-            let operation = event.detail.borrow_mut();
+        let split = EventDetail::StockSplit(StockSplit {
+            split_kind: StockSplitKind::Split,
+            factor: 2,
+        });
+
+        let operation = std::mem::replace(&mut event.detail, split);
+
+        event.time = Utc.ymd(2020, 3, 2).and_hms(12, 0, 0);
+        assert!(insert_one(event.clone()).is_ok(), true);
+
+        let _ = std::mem::replace(&mut event.detail, operation);
+
+        let mut detail = std::mem::replace(&mut event.detail, default_operation);
+        if let EventDetail::StockOperation(operation) = &mut detail {
+            let operation = &mut operation.operation;
             // This is a Friday, so will test corner cases of the position snapshots.
             event.time = Utc.ymd(2020, 3, 27).and_hms(12, 0, 0);
-            operation.price = 10.0;
+            operation.price = 5.0;
+            operation.quantity *= 2;
             operation.kind = OperationKind::Purchase;
+
+            event.detail = detail;
 
             assert!(insert_one(event).is_ok(), true);
         }
@@ -503,12 +537,12 @@ mod tests {
             Position {
                 id: position.id.clone(),
                 symbol,
-                average_price: 8.0,
+                average_price: 4.0,
                 cost_basis: 1200.0,
-                quantity: 150,
+                quantity: 300,
                 time: position.time,
                 current_price: 9.0,
-                gain: 150.0,
+                gain: 1500.0,
                 realized: 100.0,
                 sales,
                 portfolio: None,
@@ -545,11 +579,11 @@ mod tests {
             ("2020-02-14", 500.0, 50, 100.0, -50.0),
             ("2020-02-21", 500.0, 50, 100.0, -50.0),
             ("2020-02-28", 500.0, 50, 100.0, -50.0),
-            ("2020-03-06", 700.0, 100, 100.0, 200.0),
-            ("2020-03-13", 700.0, 100, 100.0, 200.0),
-            ("2020-03-20", 700.0, 100, 100.0, 200.0),
-            ("2020-03-27", 1200.0, 150, 100.0, 150.0),
-            ("2020-04-03", 1200.0, 150, 100.0, 150.0),
+            ("2020-03-06", 700.0, 200, 100.0, 1100.0),
+            ("2020-03-13", 700.0, 200, 100.0, 1100.0),
+            ("2020-03-20", 700.0, 200, 100.0, 1100.0),
+            ("2020-03-27", 1200.0, 300, 100.0, 1500.0),
+            ("2020-04-03", 1200.0, 300, 100.0, 1500.0),
         ];
 
         for (index, position) in positions.into_iter().enumerate() {

@@ -7,11 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{BackendError, WalletResult};
 use crate::rest::*;
-use crate::stock::StockOperation;
+use crate::stock::{StockOperation, StockSplit};
 use crate::walletdb::{Queryable, WalletDB};
-
-#[cfg(test)]
-use crate::operation::BaseOperation;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct Event {
@@ -36,17 +33,11 @@ impl Queryable for Event {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(tag = "eventType", content = "detail")]
 pub enum EventDetail {
+    #[serde(rename = "stock-operation")]
     StockOperation(StockOperation),
-}
 
-#[cfg(test)]
-impl EventDetail {
-    // FIXME: this should be made generic; looks like it'll need a new trait
-    pub fn borrow_mut(&mut self) -> &mut BaseOperation {
-        match self {
-            EventDetail::StockOperation(operation) => &mut operation.operation,
-        }
-    }
+    #[serde(rename = "stock-split")]
+    StockSplit(StockSplit),
 }
 
 /// # Add an event

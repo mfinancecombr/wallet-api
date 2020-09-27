@@ -19,6 +19,25 @@ pub struct StockOperation {
     pub operation: BaseOperation,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
+pub enum StockSplitKind {
+    #[serde(rename = "split")]
+    Split,
+    #[serde(rename = "reverse-split")]
+    ReverseSplit,
+}
+
+fn split_kind() -> StockSplitKind {
+    StockSplitKind::Split
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
+pub struct StockSplit {
+    #[serde(default = "split_kind", rename = "splitType")]
+    pub split_kind: StockSplitKind,
+    pub factor: i64,
+}
+
 /// # Get a stock position
 ///
 /// Get position for a specific stock
