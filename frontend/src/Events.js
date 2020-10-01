@@ -28,7 +28,7 @@ export const EventList = (props) => (
       <DateField showTime source="time" />
       <TextField source="symbol" />
       <TextField source="detail.price" label="Price" />
-      <TextField source="detail.quantity" labe="Quantity" />
+      <TextField source="detail.quantity" label="Quantity" />
       <TextField source="detail.fees" label="Fees" />
       <TextField source="detail.type" label="Type" />
       <ReferenceField
