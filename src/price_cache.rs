@@ -1,7 +1,12 @@
+use futures::{future, StreamExt};
+use log::debug;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::Rocket;
 use std::collections::HashMap;
 use std::sync::Mutex;
+use yahoo_finance::Streamer;
+
+use crate::event::get_distinct_symbols;
 
 struct PriceMap(HashMap<String, f64>);
 impl PriceMap {
@@ -30,14 +35,36 @@ impl PriceCache {
             .flatten()
     }
 
-    #[cfg(not(test))]
     pub fn update_current_price(symbol: String, price: f64) {
+        debug!("Updating current price for {}: {}", symbol, price);
+
         PRICE_CACHE
             .lock()
             .map(|mut price_cache| {
                 price_cache.0.insert(symbol, price);
             })
             .expect("Failed to lock price cache map");
+    }
+
+    #[tokio::main]
+    async fn watch_prices(symbols: Vec<&str>) {
+        let streamer = Streamer::new(symbols);
+        loop {
+            streamer
+                .stream()
+                .await
+                .for_each(|quote| {
+                    let mut symbol = quote.symbol.to_string();
+
+                    // Remove the .SA.
+                    symbol.truncate(symbol.len() - 3);
+
+                    PriceCache::update_current_price(symbol, quote.price);
+
+                    future::ready(())
+                })
+                .await;
+        }
     }
 }
 
@@ -49,5 +76,18 @@ impl Fairing for PriceCache {
         }
     }
 
-    fn on_launch(&self, _rocket: &Rocket) {}
+    fn on_launch(&self, _rocket: &Rocket) {
+        let mut symbols = get_distinct_symbols(None).expect("Failed to query mongodb for symbols");
+        std::thread::spawn(move || {
+            Self::watch_prices(
+                symbols
+                    .iter_mut()
+                    .map(|s| {
+                        s.push_str(".SA");
+                        String::as_str(s)
+                    })
+                    .collect::<Vec<&str>>(),
+            );
+        });
+    }
 }
