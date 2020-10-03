@@ -6,6 +6,7 @@ use rayon::prelude::*;
 use rocket_okapi::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::cmp::PartialEq;
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::error::*;
@@ -331,6 +332,44 @@ impl Position {
         positions.sort_unstable_by(|a, b| a.symbol.partial_cmp(&b.symbol).unwrap());
 
         Ok(positions)
+    }
+
+    pub fn get_history_for_portfolio(
+        oid: Option<String>,
+        since: Option<DateTime<Utc>>,
+    ) -> WalletResult<HashMap<Date<Utc>, Vec<Position>>> {
+        let db = WalletDB::get_connection();
+        let collection = db.collection(Position::collection_name());
+
+        let since = since.unwrap_or_else(|| Utc.ymd(2006, 1, 1).and_hms(0, 0, 0));
+        let filter = if let Some(oid) = oid {
+            doc! {
+                "portfolio": oid,
+                "time": { "$gt": since.to_rfc3339() }
+            }
+        } else {
+            doc! {
+                "time": { "$gt": since.to_rfc3339() }
+            }
+        };
+
+        let options = FindOptions::builder().sort(doc! { "time": 1 });
+
+        let positions = collection
+            .find(filter, options.build())
+            .map(|cursor| Position::from_docs(cursor).expect("Failed to convert document"))
+            .expect("Failed to query positions collection");
+
+        let mut snapshots = HashMap::<Date<Utc>, Vec<Position>>::new();
+
+        for position in positions {
+            snapshots
+                .entry(position.time.date())
+                .or_insert(vec![])
+                .push(position);
+        }
+
+        Ok(snapshots)
     }
 
     pub fn create_snapshots(symbol: &str, mut references: Vec<Position>) -> WalletResult<()> {

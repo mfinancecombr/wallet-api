@@ -1,9 +1,11 @@
+use chrono::{Date, Utc};
 use rocket::request::Form;
 use rocket_contrib::json::Json;
 use rocket_okapi::{openapi, JsonSchema};
 use serde::{Deserialize, Serialize};
 
 use crate::error::WalletResult;
+use crate::operation::OperationKind;
 use crate::position::Position;
 use crate::rest::*;
 use crate::walletdb::Queryable;
@@ -71,6 +73,86 @@ fn get_portfolio_positions(
     } else {
         Ok(Rest(Json(result), count))
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct PerformanceSnapshot {
+    name: String,
+    reference: f64,
+    percentual_gain: f64,
+}
+
+/// # Obtain cash-flow-adjusted historical performance
+///
+/// Returns an array with weekly snapshots of portfolio performance adjusted
+/// by purchases and sales on that week. This gives us performance measurements
+/// that can be compared with indexes or funds performance.
+#[openapi]
+#[get("/portfolios/performance?<oid>")]
+pub fn performance(oid: Option<String>) -> WalletResult<Json<Vec<PerformanceSnapshot>>> {
+    let snapshots = Position::get_history_for_portfolio(oid, None)?;
+    let mut dates = snapshots.keys().collect::<Vec<&Date<Utc>>>();
+    dates.sort();
+
+    #[derive(Copy, Clone, Debug)]
+    struct AggregatePosition {
+        cost_basis: f64,
+        current_value: f64,
+        operations_adjustment: f64,
+    }
+
+    let mut performance_snapshots = vec![];
+    let mut previous_aggregate: Option<AggregatePosition> = None;
+    let mut snapshot = PerformanceSnapshot {
+        name: String::new(),
+        reference: 100.,
+        percentual_gain: 0.,
+    };
+
+    for d in dates {
+        let positions = snapshots.get(d).unwrap();
+        let aggregate = positions.iter().fold(
+            AggregatePosition {
+                cost_basis: 0.,
+                current_value: 0.,
+                operations_adjustment: 0.,
+            },
+            |acc, pos| {
+                let mut acc = acc;
+                acc.cost_basis += pos.cost_basis;
+                acc.current_value += pos.current_price * pos.quantity as f64;
+
+                // We need to adjust our aggregate numbers for the operations
+                // that happened since our last snapshot, so that they do
+                // not affect our return calculation.
+                for op in &pos.recent_operations {
+                    let adjustment = op.quantity as f64 * op.price;
+                    match op.kind {
+                        OperationKind::Purchase => acc.operations_adjustment += adjustment,
+                        OperationKind::Sale => acc.operations_adjustment -= adjustment,
+                    }
+                }
+                acc
+            },
+        );
+
+        let mut percent_change = 0.;
+        if let Some(previous_aggregate) = previous_aggregate {
+            let adjusted_current_value = aggregate.current_value - aggregate.operations_adjustment;
+            percent_change = (adjusted_current_value - previous_aggregate.current_value)
+                / previous_aggregate.current_value;
+        }
+
+        snapshot.name = d.naive_utc().to_string();
+        snapshot.reference += snapshot.reference.abs() * percent_change;
+        snapshot.percentual_gain = snapshot.reference - 100.;
+
+        performance_snapshots.push(snapshot.clone());
+
+        previous_aggregate = Some(aggregate);
+    }
+
+    Ok(Json(performance_snapshots))
 }
 
 impl Queryable for Portfolio {

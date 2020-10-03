@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Route } from "react-router-dom";
 import { Admin, Resource } from "react-admin";
 import jsonServerProvider from "ra-data-json-server";
 import {
@@ -18,10 +19,15 @@ import {
   PortfolioCreate,
 } from "./Portfolios";
 import { PositionList } from "./Positions";
+import { Performance } from "./Performance";
+
+const customRoutes = [
+  <Route exact path="/performance" component={Performance} />,
+];
 
 const dataProvider = jsonServerProvider("http://localhost:8000/api/v1");
 const App = () => (
-  <Admin dataProvider={dataProvider} menu={Menu}>
+  <Admin dataProvider={dataProvider} menu={Menu} customRoutes={customRoutes}>
     <Resource
       name="brokers"
       list={BrokerList}
@@ -47,13 +53,15 @@ const App = () => (
       icon={FolderSpecialIcon}
       options={{ label: "Portfolios" }}
     />
-    <Resource name="portfolios/positions" icon={StoreIcon} />
     <Resource
       name="positions"
       list={PositionList}
       icon={AttachMoneyIcon}
       options={{ label: "Positions" }}
     />
+
+    <Resource name="portfolios/positions" />
+    <Resource name="portfolios/performance" />
   </Admin>
 );
 

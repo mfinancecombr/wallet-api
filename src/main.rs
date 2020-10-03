@@ -62,6 +62,8 @@ fn main() {
                 // Historical
                 refresh_historicals,
                 refresh_historical_for_symbol,
+                // Performance
+                performance,
                 // Position
                 positions,
                 // Portfolio
