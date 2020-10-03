@@ -1,30 +1,43 @@
 import * as React from "react";
 import {
-  List,
+  Create,
   Datagrid,
   Edit,
-  Create,
+  EditButton,
+  List,
+  ReferenceManyField,
   Show,
+  ShowButton,
   SimpleForm,
   SimpleShowLayout,
-  ReferenceManyField,
   TextField,
-  EditButton,
-  ShowButton,
   TextInput,
 } from "react-admin";
 import { Divider } from "@material-ui/core";
 import { PositionDataGrid } from "./Positions";
 import { Performance } from "./Performance";
 
+import Allocation from "./Allocation";
+
+const PortfolioShowTitle = ({ record }) => {
+  return <span>Portfolio {record ? record.name : ""}</span>;
+};
+
 export const PortfolioShow = (props) => {
   return (
-    <Show {...props}>
+    <Show title={<PortfolioShowTitle />} {...props}>
       <SimpleShowLayout>
         <TextField source="name" />
         <Divider />
         <Performance portfolio={props.id} />
         <Divider />
+        <ReferenceManyField
+          reference="portfolios/positions"
+          target="id"
+          label="Charts"
+        >
+          <Allocation height={300} width={400} isMoney={true} />
+        </ReferenceManyField>
         <ReferenceManyField
           reference="portfolios/positions"
           target="id"
