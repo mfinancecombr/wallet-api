@@ -13,13 +13,18 @@ import {
   ShowButton,
   TextInput,
 } from "react-admin";
+import { Divider } from "@material-ui/core";
 import { PositionDataGrid } from "./Positions";
+import { Performance } from "./Performance";
 
 export const PortfolioShow = (props) => {
   return (
     <Show {...props}>
       <SimpleShowLayout>
         <TextField source="name" />
+        <Divider />
+        <Performance portfolio={props.id} />
+        <Divider />
         <ReferenceManyField
           reference="portfolios/positions"
           target="id"
