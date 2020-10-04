@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use crate::error::*;
 use crate::event::{get_distinct_symbols, Event, EventDetail};
 use crate::historical::Historical;
-use crate::operation::OperationKind;
+use crate::operation::{BaseOperation, OperationKind};
 use crate::scheduling::LockMap;
 use crate::stock::StockSplitKind;
 use crate::walletdb::*;
@@ -29,7 +29,7 @@ pub struct Position {
     pub current_price: f64,
     pub gain: f64,
     pub realized: f64,
-    pub sales: Vec<Sale>,
+    pub recent_operations: Vec<BaseOperation>,
     pub portfolio: Option<String>,
 }
 
@@ -45,7 +45,7 @@ impl Position {
             current_price: 0.0,
             gain: 0.0,
             realized: 0.0,
-            sales: Vec::<Sale>::new(),
+            recent_operations: Vec::<BaseOperation>::new(),
             portfolio: portfolio_oid,
         }
     }
@@ -100,14 +100,6 @@ impl Queryable for Position {
     fn collection_name() -> &'static str {
         "positions"
     }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
-pub struct Sale {
-    pub time: DateTime<Utc>,
-    pub quantity: i64,
-    pub cost_price: f64,
-    pub sell_price: f64,
 }
 
 fn find_all_fridays_between(from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Date<Utc>> {
@@ -205,19 +197,14 @@ async fn do_calculate_for_symbol(
 
                             position.realized += operation.quantity as f64 * operation.price
                                 - operation.quantity as f64 * cost_price;
-
-                            position.sales.push(Sale {
-                                time: position.time,
-                                quantity: operation.quantity,
-                                cost_price,
-                                sell_price: operation.price,
-                            })
                         }
                     }
 
                     if position.quantity != 0 && position.cost_basis != 0.0 {
                         position.average_price = position.cost_basis / position.quantity as f64;
                     }
+
+                    position.recent_operations.push(operation.clone());
                 }
                 EventDetail::StockSplit(split) => match split.split_kind {
                     StockSplitKind::Split => {
@@ -232,6 +219,7 @@ async fn do_calculate_for_symbol(
             }
 
             references.push(position.clone());
+            position.recent_operations.clear();
         }
     }
 
@@ -376,6 +364,8 @@ impl Position {
 
                     debug!("[{}] inserting snapshot {:?}", symbol, previous_position);
                     insert_one(previous_position.clone())?;
+
+                    previous_position.recent_operations.clear();
                 }
             }
 
@@ -438,7 +428,7 @@ mod tests {
             detail: default_operation.clone(),
         };
 
-        let mut sales = Vec::<Sale>::new();
+        let mut recent_operations = Vec::<BaseOperation>::new();
 
         assert!(insert_one(event.clone()).is_ok(), true);
 
@@ -450,12 +440,7 @@ mod tests {
             operation.quantity = 50;
             operation.kind = OperationKind::Sale;
 
-            sales.push(Sale {
-                time: event.time,
-                quantity: operation.quantity,
-                cost_price: 10.0,
-                sell_price: operation.price,
-            });
+            recent_operations.push(operation.clone());
 
             event.detail = detail;
 
@@ -526,7 +511,7 @@ mod tests {
         assert_eq!(position.quantity, same_position.quantity);
         assert_relative_eq!(position.average_price, same_position.average_price);
         assert_relative_eq!(position.realized, same_position.realized);
-        assert_eq!(position.sales, same_position.sales);
+        assert_eq!(position.recent_operations, same_position.recent_operations);
 
         // Manually check that the time is pretty close to now, since we will update our
         // reference below with what we got.
@@ -545,7 +530,7 @@ mod tests {
                 current_price: 9.0,
                 gain: 1500.0,
                 realized: 100.0,
-                sales,
+                recent_operations: vec![],
                 portfolio: None,
             }
         );
