@@ -360,7 +360,7 @@ impl Position {
                 for friday in find_all_fridays_between(previous_position.time, position.time) {
                     let asset_day = Historical::get_for_day_with_fallback(symbol, friday);
                     if let Ok(asset_day) = asset_day {
-                        previous_position.time = asset_day.time;
+                        previous_position.time = friday.and_hms(12, 0, 0);
                         previous_position.current_price = asset_day.close;
                     } else {
                         warn!(
