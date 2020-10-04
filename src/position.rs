@@ -371,6 +371,19 @@ impl Position {
 
             previous_position = Some(position.clone());
         }
+
+        // Make snapshots come up to yesterday.
+        if let Some(mut previous_position) = previous_position {
+            for friday in
+                find_all_fridays_between(previous_position.time, Utc::now() - Duration::days(1))
+            {
+                previous_position.time = friday.and_hms(12, 0, 0);
+                debug!("[{}] inserting snapshot {:?}", symbol, previous_position);
+                insert_one(previous_position.clone())?;
+                previous_position.recent_operations.clear();
+            }
+        }
+
         info_!("[{}] done saving Position snapshots", symbol);
 
         Ok(())
