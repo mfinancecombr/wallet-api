@@ -9,6 +9,7 @@ use crate::rest::*;
 use crate::walletdb::Queryable;
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct Portfolio {
     #[serde(alias = "_id")]
     pub id: Option<String>,
