@@ -72,7 +72,7 @@ const StockOperationForm = (props) => (
     </CardContentInner>
     <CardContentInner>
       <SelectInput
-        label="Price"
+        label="Type"
         source="detail.type"
         choices={[
           { id: "purchase", name: "Purchase" },
