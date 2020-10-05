@@ -51,6 +51,6 @@ const ColoredGain = ({ gain, children }) => {
 };
 
 export const GainField = ({ source, record }) => {
-  let gain = (record.gain / record.cost_basis) * 100;
+  let gain = (record.gain / record.costBasis) * 100;
   return <ColoredGain gain={gain}>{convertToBRLFloat(gain)}%</ColoredGain>;
 };

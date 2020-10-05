@@ -8,6 +8,7 @@ use crate::rest::*;
 use crate::walletdb::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct Broker {
     #[serde(alias = "_id")]
     id: Option<String>,

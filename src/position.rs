@@ -17,6 +17,7 @@ use crate::stock::StockSplitKind;
 use crate::walletdb::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Position {
     #[serde(alias = "_id")]
     pub id: Option<String>,

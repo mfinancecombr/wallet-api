@@ -8,12 +8,12 @@ export const PositionDataGrid = (props) => (
   <Datagrid>
     <TextField source="symbol" />
     <TextField source="quantity" />
-    <MoneyField source="average_price" />
-    <MoneyField source="current_price" />
-    <MoneyField source="cost_basis" />
+    <MoneyField source="averagePrice" />
+    <MoneyField source="currentPrice" />
+    <MoneyField source="costBasis" />
     <MoneyField
-      source="current_value"
-      calculate={(r) => r.current_price * r.quantity}
+      source="currentValue"
+      calculate={(r) => r.currentPrice * r.quantity}
     />
     <GainField source="gain" />
   </Datagrid>
