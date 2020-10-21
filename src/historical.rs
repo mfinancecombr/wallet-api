@@ -221,65 +221,68 @@ async fn do_refresh_for_symbol(symbol: &str) -> WalletResult<()> {
 #[cfg(test)]
 mod tests {
     use chrono::Datelike;
+    use rusty_fork::rusty_fork_test;
 
     use super::*;
 
-    #[test]
-    fn repeated_refreshes() {
-        WalletDB::init_client("mongodb://localhost:27017/");
+    rusty_fork_test! {
+        #[test]
+        fn repeated_refreshes() {
+            WalletDB::init_client("mongodb://localhost:27017/");
 
-        let db = WalletDB::get_connection();
+            let db = WalletDB::get_connection();
 
-        let collection = db.collection("historical");
+            let collection = db.collection("historical");
 
-        assert_eq!(collection.delete_many(doc! {}, None).is_ok(), true);
+            assert_eq!(collection.delete_many(doc! {}, None).is_ok(), true);
 
-        // Downloading the data...
-        let result = do_refresh_for_symbol("ANIM3");
-        assert_eq!(result.is_ok(), true);
+            // Downloading the data...
+            let result = do_refresh_for_symbol("ANIM3");
+            assert_eq!(result.is_ok(), true);
 
-        // Did we add some stuff?
-        let original_count = collection
-            .count_documents(None, None)
-            .expect("Count failed");
-        assert!(original_count > 0);
+            // Did we add some stuff?
+            let original_count = collection
+                .count_documents(None, None)
+                .expect("Count failed");
+            assert!(original_count > 0);
 
-        // Delete the last year.
-        let filter = doc! {
-            "time": { "$gt": format!("{}-1-1", Utc::today().year() - 1) }
-        };
-        collection
-            .delete_many(filter, None)
-            .expect("Delete many failed");
+            // Delete the last year.
+            let filter = doc! {
+                "time": { "$gt": format!("{}-1-1", Utc::today().year() - 1) }
+            };
+            collection
+                .delete_many(filter, None)
+                .expect("Delete many failed");
 
-        // Make sure we actually deleted something, but still have a bit.
-        let count = collection
-            .count_documents(None, None)
-            .expect("Count failed");
-        assert!(count > 0 && count < original_count);
+            // Make sure we actually deleted something, but still have a bit.
+            let count = collection
+                .count_documents(None, None)
+                .expect("Count failed");
+            assert!(count > 0 && count < original_count);
 
-        // Refresh again.
-        let result = do_refresh_for_symbol("ANIM3");
-        assert_eq!(result.is_ok(), true);
+            // Refresh again.
+            let result = do_refresh_for_symbol("ANIM3");
+            assert_eq!(result.is_ok(), true);
 
-        // Do we get to the same number we had at the first run?
-        let count = collection
-            .count_documents(None, None)
-            .expect("Count failed");
-        assert_eq!(count, original_count);
+            // Do we get to the same number we had at the first run?
+            let count = collection
+                .count_documents(None, None)
+                .expect("Count failed");
+            assert_eq!(count, original_count);
 
-        // Refresh yet again.
-        let result = do_refresh_for_symbol("ANIM3");
-        assert_eq!(result.is_ok(), true);
+            // Refresh yet again.
+            let result = do_refresh_for_symbol("ANIM3");
+            assert_eq!(result.is_ok(), true);
 
-        // Do we still get to the same number we had at the first run?
-        let count = collection
-            .count_documents(None, None)
-            .expect("Count failed");
-        assert_eq!(count, original_count);
+            // Do we still get to the same number we had at the first run?
+            let count = collection
+                .count_documents(None, None)
+                .expect("Count failed");
+            assert_eq!(count, original_count);
 
-        if let Err(e) = db.drop(None) {
-            println!("Failed to drop test db {}", format!("{:?}", e));
+            if let Err(e) = db.drop(None) {
+                println!("Failed to drop test db {}", format!("{:?}", e));
+            }
         }
     }
 }

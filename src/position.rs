@@ -432,6 +432,7 @@ impl Position {
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
+    use rusty_fork::rusty_fork_test;
     use std::vec::Vec;
 
     use super::*;
@@ -439,226 +440,228 @@ mod tests {
     use crate::portfolio::Portfolio;
     use crate::stock::{StockOperation, StockSplit};
 
-    #[test]
-    fn position_calculation() {
-        WalletDB::init_client("mongodb://localhost:27017/");
+    rusty_fork_test! {
+        #[test]
+        fn position_calculation() {
+            WalletDB::init_client("mongodb://localhost:27017/");
 
-        let db = WalletDB::get_connection();
+            let db = WalletDB::get_connection();
 
-        assert!(
-            db.collection(Event::collection_name())
-                .delete_many(doc! {}, None)
-                .is_ok(),
-            true
-        );
+            assert!(
+                db.collection(Event::collection_name())
+                    .delete_many(doc! {}, None)
+                    .is_ok(),
+                true
+            );
 
-        assert!(
-            db.collection(Position::collection_name())
-                .delete_many(doc! {}, None)
-                .is_ok(),
-            true
-        );
+            assert!(
+                db.collection(Position::collection_name())
+                    .delete_many(doc! {}, None)
+                    .is_ok(),
+                true
+            );
 
-        let symbol = String::from("FAKE4");
+            let symbol = String::from("FAKE4");
 
-        let default_operation = EventDetail::StockOperation(StockOperation {
-            asset_kind: AssetKind::Stock,
-            operation: BaseOperation {
-                kind: OperationKind::Purchase,
-                broker: None,
-                portfolios: Vec::<String>::new(),
-                price: 10.0,
-                quantity: 100,
-                fees: 0.0,
-            },
-        });
+            let default_operation = EventDetail::StockOperation(StockOperation {
+                asset_kind: AssetKind::Stock,
+                operation: BaseOperation {
+                    kind: OperationKind::Purchase,
+                    broker: None,
+                    portfolios: Vec::<String>::new(),
+                    price: 10.0,
+                    quantity: 100,
+                    fees: 0.0,
+                },
+            });
 
-        let mut event = Event {
-            id: None,
-            symbol: symbol.clone(),
-            time: Utc.ymd(2020, 1, 1).and_hms(12, 0, 0),
-            detail: default_operation.clone(),
-        };
+            let mut event = Event {
+                id: None,
+                symbol: symbol.clone(),
+                time: Utc.ymd(2020, 1, 1).and_hms(12, 0, 0),
+                detail: default_operation.clone(),
+            };
 
-        let mut recent_operations = Vec::<BaseOperation>::new();
-
-        assert!(insert_one(event.clone()).is_ok(), true);
-
-        let mut detail = std::mem::replace(&mut event.detail, default_operation.clone());
-        if let EventDetail::StockOperation(operation) = &mut detail {
-            let operation = &mut operation.operation;
-            event.time = Utc.ymd(2020, 2, 1).and_hms(12, 0, 0);
-            operation.price = 12.0;
-            operation.quantity = 50;
-            operation.kind = OperationKind::Sale;
-
-            recent_operations.push(operation.clone());
-
-            event.detail = detail;
+            let mut recent_operations = Vec::<BaseOperation>::new();
 
             assert!(insert_one(event.clone()).is_ok(), true);
-        }
 
-        let portfolio = insert_one(Portfolio {
-            id: None,
-            name: "FakePortfolio".to_string(),
-        })
-        .expect("Failed to insert Portfolio");
+            let mut detail = std::mem::replace(&mut event.detail, default_operation.clone());
+            if let EventDetail::StockOperation(operation) = &mut detail {
+                let operation = &mut operation.operation;
+                event.time = Utc.ymd(2020, 2, 1).and_hms(12, 0, 0);
+                operation.price = 12.0;
+                operation.quantity = 50;
+                operation.kind = OperationKind::Sale;
 
-        let mut detail = std::mem::replace(&mut event.detail, default_operation.clone());
-        if let EventDetail::StockOperation(operation) = &mut detail {
-            let operation = &mut operation.operation;
-            event.time = Utc.ymd(2020, 3, 1).and_hms(12, 0, 0);
-            operation.price = 4.0;
-            operation.kind = OperationKind::Purchase;
-            operation
-                .portfolios
-                .push(portfolio.id.as_ref().unwrap().clone());
+                recent_operations.push(operation.clone());
 
-            event.detail = detail;
+                event.detail = detail;
 
-            assert!(insert_one(event.clone()).is_ok(), true);
-        }
-
-        let split = EventDetail::StockSplit(StockSplit {
-            split_kind: StockSplitKind::Split,
-            factor: 2,
-        });
-
-        let operation = std::mem::replace(&mut event.detail, split);
-
-        event.time = Utc.ymd(2020, 3, 2).and_hms(12, 0, 0);
-        assert!(insert_one(event.clone()).is_ok(), true);
-
-        let _ = std::mem::replace(&mut event.detail, operation);
-
-        let mut detail = std::mem::replace(&mut event.detail, default_operation);
-        if let EventDetail::StockOperation(operation) = &mut detail {
-            let operation = &mut operation.operation;
-            // This is a Friday, so will test corner cases of the position snapshots.
-            event.time = Utc.ymd(2020, 3, 27).and_hms(12, 0, 0);
-            operation.price = 5.0;
-            operation.quantity *= 2;
-            operation.kind = OperationKind::Purchase;
-
-            event.detail = detail;
-
-            assert!(insert_one(event).is_ok(), true);
-        }
-
-        // Do a full update first, which should trigger calculation for our
-        // FAKE4. This means the specific call below should start from an
-        // existing reference.
-        Position::calculate_all().expect("Something went wrong");
-
-        let position = Position::calculate_for_symbol("FAKE4", None);
-        assert_eq!(position.is_ok(), true);
-        let position = position.unwrap();
-
-        let same_position = Position::calculate_for_symbol("FAKE4", None);
-        assert_eq!(same_position.is_ok(), true);
-        let same_position = same_position.unwrap();
-
-        assert_relative_eq!(position.cost_basis, same_position.cost_basis,);
-        assert_eq!(position.quantity, same_position.quantity);
-        assert_relative_eq!(position.average_price, same_position.average_price);
-        assert_relative_eq!(position.realized, same_position.realized);
-        assert_eq!(position.recent_operations, same_position.recent_operations);
-
-        // Manually check that the time is pretty close to now, since we will update our
-        // reference below with what we got.
-        assert!(Utc::now() - position.time < Duration::seconds(10));
-
-        // NOTE: Our Historical mock for now just returns a static 9.0 price for all requests.
-        assert_eq!(
-            position,
-            Position {
-                id: position.id.clone(),
-                symbol,
-                average_price: 4.0,
-                cost_basis: 1200.0,
-                quantity: 300,
-                time: position.time,
-                current_price: 9.0,
-                gain: 1500.0,
-                realized: 100.0,
-                recent_operations: vec![],
-                portfolio: None,
+                assert!(insert_one(event.clone()).is_ok(), true);
             }
-        );
 
-        // Ensure create_snapshots finished.
-        let guard = LockMap::lock(Position::collection_name(), "FAKE4");
-        drop(guard);
+            let portfolio = insert_one(Portfolio {
+                id: None,
+                name: "FakePortfolio".to_string(),
+            })
+            .expect("Failed to insert Portfolio");
 
-        let collection = db.collection(Position::collection_name());
+            let mut detail = std::mem::replace(&mut event.detail, default_operation.clone());
+            if let EventDetail::StockOperation(operation) = &mut detail {
+                let operation = &mut operation.operation;
+                event.time = Utc.ymd(2020, 3, 1).and_hms(12, 0, 0);
+                operation.price = 4.0;
+                operation.kind = OperationKind::Purchase;
+                operation
+                    .portfolios
+                    .push(portfolio.id.as_ref().unwrap().clone());
 
-        // Snapshots should go all the way to "today", so we select a small
-        // known sample to verify everything looks ok.
-        let filter = doc! {
-            "time": { "$lt": "2020-04-04" }
-        };
+                event.detail = detail;
 
-        let positions = collection
-            .find(Some(filter), None)
-            .map(|cursor| Position::from_docs(cursor).expect("Failed to convert document"))
-            .expect("Failed to query positions collection");
+                assert!(insert_one(event.clone()).is_ok(), true);
+            }
 
-        assert_eq!(positions.len(), 14);
+            let split = EventDetail::StockSplit(StockSplit {
+                split_kind: StockSplitKind::Split,
+                factor: 2,
+            });
 
-        // time, cost_basis, quantity, realized, gain
-        let expected = vec![
-            ("2020-01-03", 1000.0, 100, 0.0, -100.0),
-            ("2020-01-10", 1000.0, 100, 0.0, -100.0),
-            ("2020-01-17", 1000.0, 100, 0.0, -100.0),
-            ("2020-01-24", 1000.0, 100, 0.0, -100.0),
-            ("2020-01-31", 1000.0, 100, 0.0, -100.0),
-            ("2020-02-07", 500.0, 50, 100.0, -50.0),
-            ("2020-02-14", 500.0, 50, 100.0, -50.0),
-            ("2020-02-21", 500.0, 50, 100.0, -50.0),
-            ("2020-02-28", 500.0, 50, 100.0, -50.0),
-            ("2020-03-06", 700.0, 200, 100.0, 1100.0),
-            ("2020-03-13", 700.0, 200, 100.0, 1100.0),
-            ("2020-03-20", 700.0, 200, 100.0, 1100.0),
-            ("2020-03-27", 1200.0, 300, 100.0, 1500.0),
-            ("2020-04-03", 1200.0, 300, 100.0, 1500.0),
-        ];
+            let operation = std::mem::replace(&mut event.detail, split);
 
-        for (index, position) in positions.into_iter().enumerate() {
-            let (time, cost_basis, quantity, realized, gain) = &expected[index];
-            assert_eq!(*time, position.time.naive_local().date().to_string());
-            assert_relative_eq!(*cost_basis, position.cost_basis);
-            assert_eq!(*quantity, position.quantity);
-            assert_relative_eq!(*realized, position.realized);
-            assert_relative_eq!(*gain, position.gain);
-        }
+            event.time = Utc.ymd(2020, 3, 2).and_hms(12, 0, 0);
+            assert!(insert_one(event.clone()).is_ok(), true);
 
-        let position = Position::calculate_for_symbol("FAKE4", portfolio.id.clone());
-        assert_eq!(position.is_ok(), true);
+            let _ = std::mem::replace(&mut event.detail, operation);
 
-        // Wait for create_snapshots to finish.
-        let guard = LockMap::lock(Position::collection_name(), "FAKE4");
-        drop(guard);
+            let mut detail = std::mem::replace(&mut event.detail, default_operation);
+            if let EventDetail::StockOperation(operation) = &mut detail {
+                let operation = &mut operation.operation;
+                // This is a Friday, so will test corner cases of the position snapshots.
+                event.time = Utc.ymd(2020, 3, 27).and_hms(12, 0, 0);
+                operation.price = 5.0;
+                operation.quantity *= 2;
+                operation.kind = OperationKind::Purchase;
 
-        // Make sure snapshots were created for the portfolio as well.
-        let filter = doc! {
-            "$and": [
-                { "time": { "$lt": "2020-04-04" } },
-                { "portfolio": portfolio.id.unwrap() }
-            ]
-        };
+                event.detail = detail;
 
-        let positions = collection
-            .find(Some(filter), None)
-            .map(|cursor| Position::from_docs(cursor).expect("Failed to convert document"))
-            .expect("Failed to query positions collection");
+                assert!(insert_one(event).is_ok(), true);
+            }
 
-        // This portfolio should have fewer entries, since its first operation
-        // is from March 1st.
-        assert_eq!(positions.len(), 5);
+            // Do a full update first, which should trigger calculation for our
+            // FAKE4. This means the specific call below should start from an
+            // existing reference.
+            Position::calculate_all().expect("Something went wrong");
 
-        if let Err(e) = db.drop(None) {
-            println!("Failed to drop test db {}", format!("{:?}", e));
+            let position = Position::calculate_for_symbol("FAKE4", None);
+            assert_eq!(position.is_ok(), true);
+            let position = position.unwrap();
+
+            let same_position = Position::calculate_for_symbol("FAKE4", None);
+            assert_eq!(same_position.is_ok(), true);
+            let same_position = same_position.unwrap();
+
+            assert_relative_eq!(position.cost_basis, same_position.cost_basis,);
+            assert_eq!(position.quantity, same_position.quantity);
+            assert_relative_eq!(position.average_price, same_position.average_price);
+            assert_relative_eq!(position.realized, same_position.realized);
+            assert_eq!(position.recent_operations, same_position.recent_operations);
+
+            // Manually check that the time is pretty close to now, since we will update our
+            // reference below with what we got.
+            assert!(Utc::now() - position.time < Duration::seconds(10));
+
+            // NOTE: Our Historical mock for now just returns a static 9.0 price for all requests.
+            assert_eq!(
+                position,
+                Position {
+                    id: position.id.clone(),
+                    symbol,
+                    average_price: 4.0,
+                    cost_basis: 1200.0,
+                    quantity: 300,
+                    time: position.time,
+                    current_price: 9.0,
+                    gain: 1500.0,
+                    realized: 100.0,
+                    recent_operations: vec![],
+                    portfolio: None,
+                }
+            );
+
+            // Ensure create_snapshots finished.
+            let guard = LockMap::lock(Position::collection_name(), "FAKE4");
+            drop(guard);
+
+            let collection = db.collection(Position::collection_name());
+
+            // Snapshots should go all the way to "today", so we select a small
+            // known sample to verify everything looks ok.
+            let filter = doc! {
+                "time": { "$lt": "2020-04-04" }
+            };
+
+            let positions = collection
+                .find(Some(filter), None)
+                .map(|cursor| Position::from_docs(cursor).expect("Failed to convert document"))
+                .expect("Failed to query positions collection");
+
+            assert_eq!(positions.len(), 14);
+
+            // time, cost_basis, quantity, realized, gain
+            let expected = vec![
+                ("2020-01-03", 1000.0, 100, 0.0, -100.0),
+                ("2020-01-10", 1000.0, 100, 0.0, -100.0),
+                ("2020-01-17", 1000.0, 100, 0.0, -100.0),
+                ("2020-01-24", 1000.0, 100, 0.0, -100.0),
+                ("2020-01-31", 1000.0, 100, 0.0, -100.0),
+                ("2020-02-07", 500.0, 50, 100.0, -50.0),
+                ("2020-02-14", 500.0, 50, 100.0, -50.0),
+                ("2020-02-21", 500.0, 50, 100.0, -50.0),
+                ("2020-02-28", 500.0, 50, 100.0, -50.0),
+                ("2020-03-06", 700.0, 200, 100.0, 1100.0),
+                ("2020-03-13", 700.0, 200, 100.0, 1100.0),
+                ("2020-03-20", 700.0, 200, 100.0, 1100.0),
+                ("2020-03-27", 1200.0, 300, 100.0, 1500.0),
+                ("2020-04-03", 1200.0, 300, 100.0, 1500.0),
+            ];
+
+            for (index, position) in positions.into_iter().enumerate() {
+                let (time, cost_basis, quantity, realized, gain) = &expected[index];
+                assert_eq!(*time, position.time.naive_local().date().to_string());
+                assert_relative_eq!(*cost_basis, position.cost_basis);
+                assert_eq!(*quantity, position.quantity);
+                assert_relative_eq!(*realized, position.realized);
+                assert_relative_eq!(*gain, position.gain);
+            }
+
+            let position = Position::calculate_for_symbol("FAKE4", portfolio.id.clone());
+            assert_eq!(position.is_ok(), true);
+
+            // Wait for create_snapshots to finish.
+            let guard = LockMap::lock(Position::collection_name(), "FAKE4");
+            drop(guard);
+
+            // Make sure snapshots were created for the portfolio as well.
+            let filter = doc! {
+                "$and": [
+                    { "time": { "$lt": "2020-04-04" } },
+                    { "portfolio": portfolio.id.unwrap() }
+                ]
+            };
+
+            let positions = collection
+                .find(Some(filter), None)
+                .map(|cursor| Position::from_docs(cursor).expect("Failed to convert document"))
+                .expect("Failed to query positions collection");
+
+            // This portfolio should have fewer entries, since its first operation
+            // is from March 1st.
+            assert_eq!(positions.len(), 5);
+
+            if let Err(e) = db.drop(None) {
+                println!("Failed to drop test db {}", format!("{:?}", e));
+            }
         }
     }
 }
