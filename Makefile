@@ -17,4 +17,4 @@ run:
 	@cargo +nightly run
 
 test:
-	@RUST_BACKTRACE=1 cargo +nightly test -vv
+	@RUST_BACKTRACE=1 cargo +nightly test -vv -- --nocapture
