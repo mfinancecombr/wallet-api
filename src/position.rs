@@ -11,10 +11,11 @@ use std::sync::Mutex;
 
 use crate::error::*;
 use crate::event::{get_distinct_symbols, Event, EventDetail};
+use crate::fii::FIIOperation;
 use crate::historical::Historical;
 use crate::operation::{BaseOperation, OperationKind};
 use crate::scheduling::LockMap;
-use crate::stock::StockSplitKind;
+use crate::stock::{StockOperation, StockSplitKind};
 use crate::walletdb::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
@@ -179,8 +180,8 @@ async fn do_calculate_for_symbol(
             position.time = event.time;
 
             match event.detail {
-                EventDetail::StockOperation(operation) => {
-                    let operation = operation.operation;
+                EventDetail::StockOperation(StockOperation { operation, .. })
+                | EventDetail::FIIOperation(FIIOperation { operation, .. }) => {
                     match operation.kind {
                         OperationKind::Purchase => {
                             position.cost_basis += operation.price * operation.quantity as f64;

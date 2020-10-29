@@ -6,6 +6,7 @@ use rocket_okapi::{openapi, JsonSchema};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{BackendError, WalletResult};
+use crate::fii::FIIOperation;
 use crate::rest::*;
 use crate::stock::{StockOperation, StockSplit};
 use crate::walletdb::{Queryable, WalletDB};
@@ -38,6 +39,9 @@ pub enum EventDetail {
 
     #[serde(rename = "stock-split")]
     StockSplit(StockSplit),
+
+    #[serde(rename = "fii-operation")]
+    FIIOperation(FIIOperation),
 }
 
 /// # Add an event
