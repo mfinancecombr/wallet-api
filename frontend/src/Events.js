@@ -24,6 +24,17 @@ import {
 import { DateTimeInput } from "react-admin-date-inputs";
 import { required } from "react-admin";
 
+const detailTypeChoices = [
+  { id: "purchase", name: "Purchase" },
+  { id: "sale", name: "Sale" },
+];
+
+const eventTypeChoices = [
+  { id: "fii-operation", name: "FII Operation" },
+  { id: "stock-operation", name: "Stock Operation" },
+  { id: "stock-split", name: "Stock Split" },
+];
+
 export const EventList = (props) => (
   <List {...props}>
     <Datagrid>
@@ -74,10 +85,46 @@ const StockOperationForm = (props) => (
       <SelectInput
         label="Type"
         source="detail.type"
-        choices={[
-          { id: "purchase", name: "Purchase" },
-          { id: "sale", name: "Sale" },
-        ]}
+        choices={detailTypeChoices}
+      />
+    </CardContentInner>
+    <CardContentInner>
+      <ReferenceInput label="Broker" source="detail.broker" reference="brokers">
+        <SelectInput source="detail.broker" />
+      </ReferenceInput>
+    </CardContentInner>
+    <CardContentInner>
+      <ReferenceArrayInput
+        label="Portfolios"
+        source="detail.portfolios"
+        reference="portfolios"
+      >
+        <SelectArrayInput source="detail.portfolios" />
+      </ReferenceArrayInput>
+    </CardContentInner>
+  </Fragment>
+);
+
+const FIIOperationForm = (props) => (
+  <Fragment>
+    <CardContentInner>
+      <NumberInput label="Price" source="detail.price" validate={required()} />
+    </CardContentInner>
+    <CardContentInner>
+      <NumberInput
+        label="Quantity"
+        source="detail.quantity"
+        validate={required()}
+      />
+    </CardContentInner>
+    <CardContentInner>
+      <NumberInput label="Fees" source="detail.fees" />
+    </CardContentInner>
+    <CardContentInner>
+      <SelectInput
+        label="Type"
+        source="detail.type"
+        choices={detailTypeChoices}
       />
     </CardContentInner>
     <CardContentInner>
@@ -131,17 +178,16 @@ export const EventEdit = (props) => (
       <SelectInput
         label="Type"
         source="eventType"
-        choices={[
-          { id: "stock-operation", name: "Stock Operation" },
-          { id: "stock-split", name: "Stock Split" },
-        ]}
+        choices={eventTypeChoices}
         validate={required()}
         defaultValue="stock-operation"
       />
       <FormDataConsumer>
         {({ formData, ...rest }) =>
-          formData.eventType === "stock-operation" && (
+          formData.eventType === "stock-operation" ? (
             <StockOperationForm {...props} />
+          ) : (
+            <FIIOperationForm {...props} />
           )
         }
       </FormDataConsumer>
@@ -162,17 +208,16 @@ export const EventCreate = (props) => (
       <SelectInput
         label="Type"
         source="eventType"
-        choices={[
-          { id: "stock-operation", name: "Stock Operation" },
-          { id: "stock-split", name: "Stock Split" },
-        ]}
+        choices={eventTypeChoices}
         validate={required()}
         defaultValue="stock-operation"
       />
       <FormDataConsumer>
         {({ formData, ...rest }) =>
-          formData.eventType === "stock-operation" && (
+          formData.eventType === "stock-operation" ? (
             <StockOperationForm {...props} />
+          ) : (
+            <FIIOperationForm {...props} />
           )
         }
       </FormDataConsumer>

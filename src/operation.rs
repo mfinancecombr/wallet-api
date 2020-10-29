@@ -10,6 +10,7 @@ use crate::walletdb::Queryable;
 pub enum AssetKind {
     Stock,
     TesouroDireto,
+    FII,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]

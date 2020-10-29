@@ -14,6 +14,7 @@ mod broker;
 #[macro_use]
 mod error;
 mod event;
+mod fii;
 mod historical;
 mod operation;
 mod portfolio;
@@ -27,6 +28,7 @@ mod x_response_time;
 
 use broker::*;
 use event::*;
+use fii::*;
 use historical::*;
 use portfolio::*;
 use price_cache::PriceCache;
@@ -59,6 +61,8 @@ fn main() {
                 delete_event_by_oid,
                 // Stock
                 get_stock_position_by_symbol,
+                // FII
+                get_fii_position_by_symbol,
                 // Historical
                 refresh_historicals,
                 refresh_historical_for_symbol,
