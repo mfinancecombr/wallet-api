@@ -108,7 +108,7 @@ const StockSplitForm = (props) => (
           { id: "reverse-split", name: "Reverse Split" },
         ]}
         validate={required()}
-        defaultValue="Split"
+        defaultValue="split"
       />
     </CardContentInner>
     <CardContentInner>
@@ -136,7 +136,7 @@ export const EventEdit = (props) => (
           { id: "stock-split", name: "Stock Split" },
         ]}
         validate={required()}
-        defaultValue="StockOperation"
+        defaultValue="stock-operation"
       />
       <FormDataConsumer>
         {({ formData, ...rest }) =>
