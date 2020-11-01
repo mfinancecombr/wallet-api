@@ -366,7 +366,7 @@ impl Position {
         for position in positions {
             snapshots
                 .entry(position.time.date())
-                .or_insert(vec![])
+                .or_insert_with(|| vec![])
                 .push(position);
         }
 
